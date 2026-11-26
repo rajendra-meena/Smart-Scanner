@@ -107,3 +107,72 @@ def test_store_recovery_replay_is_idempotent(tmp_path, monkeypatch):
     # A replay followed by a normal read must not create duplicate trade rows.
     assert store.trades() == [trade]
     assert store.trades() == [trade]
+
+
+
+def test_failed_option_subscription_rolls_back_local_registry():
+    engine = MarketDataEngine()
+
+    class FakeTicker:
+        MODE_FULL = 3
+        MODE_QUOTE = 1
+
+        def __init__(self):
+            self.subscribed = []
+            self.unsubscribed = []
+
+        def subscribe(self, tokens):
+            self.subscribed.extend(tokens)
+
+        def set_mode(self, mode, tokens):
+            raise RuntimeError("mode update failed")
+
+        def unsubscribe(self, tokens):
+            self.unsubscribed.extend(tokens)
+
+    ticker = FakeTicker()
+    engine._ticker = ticker
+    engine._option_instruments = [{
+        "instrument_token": 501,
+        "tradingsymbol": "ABC26NOV100CE",
+        "name": "ABC",
+        "instrument_type": "CE",
+        "expiry": "2026-12-03",
+        "lot_size": 25,
+        "strike": 100,
+    }]
+
+    try:
+        engine.subscribe_extra([501], full=True)
+    except RuntimeError as exc:
+        assert str(exc) == "mode update failed"
+    else:
+        raise AssertionError("Expected option subscription failure")
+
+    assert ticker.subscribed == [501]
+    assert ticker.unsubscribed == [501]
+    assert 501 not in engine._subscribed
+    assert 501 not in engine._instruments
+    assert 501 not in engine._full_mode_tokens
+
+
+def test_option_subscription_rejects_unknown_token_without_mutation():
+    engine = MarketDataEngine()
+
+    class FakeTicker:
+        MODE_FULL = 3
+        MODE_QUOTE = 1
+
+        def subscribe(self, tokens):
+            raise AssertionError("Unknown token must not be subscribed")
+
+        def set_mode(self, mode, tokens):
+            raise AssertionError("Unknown token must not change mode")
+
+    engine._ticker = FakeTicker()
+    engine._option_instruments = []
+
+    assert engine.subscribe_extra([999], full=True) is False
+    assert engine._subscribed == []
+    assert engine._instruments == {}
+    assert engine._full_mode_tokens == set()
