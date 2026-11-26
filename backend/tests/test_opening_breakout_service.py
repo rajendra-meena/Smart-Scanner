@@ -1026,7 +1026,11 @@ def test_watchdog_stops_when_option_quote_stales_while_equity_feed_is_fresh(
     assert watchdog.cancelled is True
     assert service._watchdog_timer is None
     assert len(store.saved_trades) == 1
-    assert any(event["event"] == "FEED_GUARD_STOP" for event in service.events)
+    assert any(
+        event["event"] == "FEED_GUARD_STOP"
+        and event["reason"] == "Option quote is stale"
+        for event in service.events
+    )
 
 
 def test_watchdog_cancels_pending_entry_when_option_quote_never_arrives(
