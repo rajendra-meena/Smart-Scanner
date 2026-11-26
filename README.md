@@ -14,7 +14,13 @@ pip install -r requirements.txt
 Copy-Item .env.example .env
 ```
 
-Set `KITE_API_KEY`, `KITE_API_SECRET`, `FRONTEND_ORIGIN=http://127.0.0.1:5173`, and `SESSION_COOKIE_SECURE=false` in `backend/.env`. After installing requirements, generate a persistent encryption key and place it in `SESSION_ENCRYPTION_KEY`:\n\n```powershell\npython -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"\n```\n\nKeep this key private and unchanged across restarts. The encrypted SQLite session database is stored at `backend/data/sessions.sqlite3` by default (relative to the backend working directory). Back up the database and the encryption key together; losing or changing the key makes existing stored sessions unreadable. In the Kite developer console, register this exact redirect URL: `http://127.0.0.1:8000/api/auth/zerodha/callback`.
+Set `KITE_API_KEY`, `KITE_API_SECRET`, `FRONTEND_ORIGIN=http://127.0.0.1:5173`, and `SESSION_COOKIE_SECURE=false` in `backend/.env`. After installing requirements, generate a persistent encryption key and place it in `SESSION_ENCRYPTION_KEY`:
+
+```powershell
+python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+```
+
+Keep this key private and unchanged across restarts. The encrypted SQLite session database is stored at `backend/data/sessions.sqlite3` by default (relative to the backend working directory). Back up the database and the encryption key together; losing or changing the key makes existing stored sessions unreadable. In the Kite developer console, register this exact redirect URL: `http://127.0.0.1:8000/api/auth/zerodha/callback`.
 
 Start the API:
 
@@ -49,7 +55,9 @@ Open **http://127.0.0.1:5173** (use this hostname consistently for the browser s
 - The instrument master is fetched through Kite Connect and filtered to NSE cash equities, nearest-expiry NFO futures, and selected NSE indices.
 - Equity and futures gainers/losers are ranked against the previous close in the streamed quote packets.
 - Advance/decline currently represents the subscribed NSE cash-equity universe for which ticks have been received in the current session. It is not an official NIFTY index constituent breadth calculation.
-- The app caps subscriptions at 3,000 instruments per Kite WebSocket connection.\n- Ticks with a zero/missing LTP or previous close are excluded from rankings and breadth; they are counted in diagnostics instead of being shown as -100% moves.\n- The UI distinguishes a connected WebSocket from fresh ticks. A connected socket alone is not represented as proof that the market is currently streaming.
+- The app caps subscriptions at 3,000 instruments per Kite WebSocket connection.
+- Ticks with a zero/missing LTP or previous close are excluded from rankings and breadth; they are counted in diagnostics instead of being shown as -100% moves.
+- The UI distinguishes a connected WebSocket from fresh ticks. A connected socket alone is not represented as proof that the market is currently streaming.
 - Index quotes are shown when received. Weighted index contributor points are intentionally not calculated yet: verified constituent weights are not provided by the Kite instrument master and must be integrated from a reliable official index constituent source before displaying contribution rankings.
 - Live ticks arrive during exchange trading; outside market hours the connection may be established but no fresh tick stream should be expected.
 
