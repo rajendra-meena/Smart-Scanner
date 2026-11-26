@@ -1,4 +1,5 @@
 from datetime import datetime, time, timedelta
+import logging
 from zoneinfo import ZoneInfo
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import RedirectResponse
@@ -8,6 +9,7 @@ from app.core.config import settings
 from app.core.session_store import session_store
 
 router = APIRouter(prefix="/auth", tags=["authentication"])
+logger = logging.getLogger(__name__)
 IST = ZoneInfo("Asia/Kolkata")
 
 def kite_client(access_token=None):
@@ -40,8 +42,10 @@ def callback(request: Request):
         response.set_cookie(settings.session_cookie_name, key, expires=expiry, path="/", httponly=True,
                              secure=settings.session_cookie_secure, samesite="lax")
         return response
-    except Exception:
-        # Never expose secrets, request_token, access_token, or raw SDK exceptions in redirects.
+    except Exception as exc:
+        # Keep credentials and tokens out of logs and browser redirects. Log the exception
+        # server-side so the actual failure (checksum, credentials, SDK/network) is diagnosable.
+        logger.exception("Kite Connect session exchange failed (%s)", type(exc).__name__)
         return RedirectResponse(f"{settings.frontend_origin}/?auth=failed", status_code=303)
 
 @router.get("/session")
