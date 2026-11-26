@@ -198,31 +198,79 @@ class MarketDataEngine:
         return [r for r in rows if underlying is None or str(r.get("name") or "").upper() == underlying.upper()]
 
     def subscribe_extra(self, tokens: list[int], full: bool = True):
-        if not tokens:
+        normalized = list(dict.fromkeys(int(token) for token in tokens))
+        if not normalized:
             return False
+
         with self._lock:
             ws = self._ticker
-            option_by_token = {int(row['instrument_token']): row for row in self._option_instruments}
-            for token in tokens:
-                row = option_by_token.get(int(token))
-                if row is None:
-                    continue
-                self._instruments[int(token)] = {
-                    'instrument_token': int(token), 'symbol': row.get('tradingsymbol'),
-                    'name': row.get('name') or row.get('tradingsymbol'), 'exchange': 'NFO',
-                    'segment': row.get('segment') or 'NFO-OPT',
-                    'instrument_type': row.get('instrument_type'), 'expiry': row.get('expiry'),
-                    'lot_size': int(row.get('lot_size') or 0), 'strike': float(row.get('strike') or 0),
-                    'tick_size': float(row.get('tick_size') or 0.05),
+            if not ws:
+                return False
+
+            option_by_token = {
+                int(row["instrument_token"]): row
+                for row in self._option_instruments
+            }
+            if any(token not in option_by_token for token in normalized):
+                return False
+
+            newly_added = [
+                token for token in normalized
+                if token not in self._subscribed
+            ]
+            previous_full = {
+                token for token in normalized
+                if token in self._full_mode_tokens
+            }
+            for token in normalized:
+                row = option_by_token[token]
+                self._instruments[token] = {
+                    "instrument_token": token,
+                    "symbol": row.get("tradingsymbol"),
+                    "name": row.get("name") or row.get("tradingsymbol"),
+                    "exchange": "NFO",
+                    "segment": row.get("segment") or "NFO-OPT",
+                    "instrument_type": row.get("instrument_type"),
+                    "expiry": row.get("expiry"),
+                    "lot_size": int(row.get("lot_size") or 0),
+                    "strike": float(row.get("strike") or 0),
+                    "tick_size": float(row.get("tick_size") or 0.05),
                 }
-                if int(token) not in self._subscribed:
-                    self._subscribed.append(int(token))
+                if token not in self._subscribed:
+                    self._subscribed.append(token)
                 if full:
-                    self._full_mode_tokens.add(int(token))
-        if not ws:
-            return False
-        ws.subscribe(tokens)
-        ws.set_mode(ws.MODE_FULL if full else ws.MODE_QUOTE, tokens)
+                    self._full_mode_tokens.add(token)
+
+        try:
+            if newly_added:
+                ws.subscribe(newly_added)
+            ws.set_mode(
+                ws.MODE_FULL if full else ws.MODE_QUOTE,
+                normalized,
+            )
+        except Exception:
+            # Roll back the local subscription registry so a failed option
+            # subscription is not silently re-added on the next reconnect.
+            with self._lock:
+                for token in newly_added:
+                    if token in self._subscribed:
+                        self._subscribed.remove(token)
+                    self._instruments.pop(token, None)
+                    self._full_mode_tokens.discard(token)
+                for token in normalized:
+                    if token in previous_full:
+                        self._full_mode_tokens.add(token)
+                    elif full:
+                        self._full_mode_tokens.discard(token)
+            if newly_added:
+                try:
+                    ws.unsubscribe(newly_added)
+                except Exception:
+                    logger.exception(
+                        "Unable to roll back failed option subscription"
+                    )
+            raise
+
         return True
 
     def universe_symbols(self):
