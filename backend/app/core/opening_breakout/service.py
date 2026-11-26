@@ -518,8 +518,8 @@ class OpeningBreakoutService:
         with self.lock:
             if not self.running:
                 return
-            self._cancel_pending_entries(now, f"TIME_EXIT_{self.config.exit_time}")
-            self._exit_open_paper_positions(now, f"TIME_EXIT_{self.config.exit_time}")
+            self._cancel_pending_entries(now, f"TIME_EXIT_{self.config.exit_time[:5].replace(':', '_')}")
+            self._exit_open_paper_positions(now, f"TIME_EXIT_{self.config.exit_time[:5].replace(':', '_')}")
             self.running = False
             if self._exit_timer:
                 self._exit_timer.cancel()
@@ -665,7 +665,7 @@ class OpeningBreakoutService:
         })
 
     def _square_off_paper(self, rows, now):
-        self._cancel_pending_entries(now, f"TIME_EXIT_{self.config.exit_time}")
+        self._cancel_pending_entries(now, f"TIME_EXIT_{self.config.exit_time[:5].replace(':', '_')}")
         # Use an option tick delivered in this 09:30 batch before checking
         # quote age; an equity-only batch must not refresh an option quote.
         for row in rows:
