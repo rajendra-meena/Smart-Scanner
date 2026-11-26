@@ -34,6 +34,9 @@ class StockState:
     skipped: bool = False
     last_price: float | None = None
     signal: Direction | None = None
+    excursion_up: bool = False
+    excursion_down: bool = False
+    last_price: float | None = None
 
 @dataclass(slots=True)
 class Position:
