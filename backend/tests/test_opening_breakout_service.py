@@ -998,3 +998,59 @@ def test_duplicate_start_does_not_reset_running_strategy(
     service_env, monkeypatch
 ):
     service, market_data, store = service_env
+
+
+def test_watchdog_stops_when_option_quote_stales_while_equity_feed_is_fresh(
+    service_env, monkeypatch
+):
+    service, market_data, store = service_env
+    position = add_open_position(service, token=202)
+    service.running = True
+    market_data.fresh = True
+    service._last_option_tick_monotonic[202] = 10.0
+    monkeypatch.setattr(service_module, "monotonic", lambda: 16.0)
+    monkeypatch.setattr(service_module, "Timer", FakeTimer)
+    FakeTimer.instances.clear()
+
+    watchdog = FakeTimer(1, service._watchdog_tick)
+    service._watchdog_timer = watchdog
+
+    service._watchdog_tick()
+
+    assert service.running is False
+    assert position["status"] == "CLOSED_UNPRICED"
+    assert position["exit_price"] is None
+    assert position.get("pnl") is None
+    assert service.engine.stocks["XYZ"].active_position_id is None
+    assert watchdog.cancelled is True
+    assert service._watchdog_timer is None
+    assert len(store.saved_trades) == 1
+    assert any(event["event"] == "FEED_GUARD_STOP" for event in service.events)
+
+
+def test_watchdog_cancels_pending_entry_when_option_quote_never_arrives(
+    service_env, monkeypatch
+):
+    service, market_data, _ = service_env
+    pending = add_pending_entry(service, token=101)
+    service.running = True
+    market_data.fresh = True
+    service._pending_quote_started[101] = 10.0
+    monkeypatch.setattr(service_module, "monotonic", lambda: 16.0)
+    monkeypatch.setattr(service_module, "Timer", FakeTimer)
+    FakeTimer.instances.clear()
+
+    watchdog = FakeTimer(1, service._watchdog_tick)
+    service._watchdog_timer = watchdog
+
+    service._watchdog_tick()
+
+    assert service.running is True
+    assert pending["status"] == "CANCELLED"
+    assert pending["cancel_reason"] == "OPTION_QUOTE_TIMEOUT"
+    assert 101 not in service._pending_contracts
+    assert service._pending_quote_started == {}
+    assert service.engine.stocks["ABC"].pending_entry is False
+    assert service.engine.stocks["ABC"].entry_count == 0
+    assert service._watchdog_timer is not None
+    assert service._watchdog_timer.started is True
