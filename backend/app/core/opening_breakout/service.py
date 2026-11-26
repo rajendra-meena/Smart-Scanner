@@ -3,6 +3,7 @@
 from datetime import datetime, time
 from zoneinfo import ZoneInfo
 from threading import RLock, Timer
+from time import monotonic
 from uuid import uuid4
 
 from .engine import OpeningBreakoutEngine
@@ -29,6 +30,8 @@ class OpeningBreakoutService:
         self._option_token_symbols = {}
         self._pending_contracts = {}
         self._last_option_ticks = {}
+        self._last_option_tick_monotonic = {}
+        self._pending_quote_started = {}
         self._exit_timer = None
         self._watchdog_timer = None
 
@@ -78,6 +81,8 @@ class OpeningBreakoutService:
             self.positions = {}
             self._pending_contracts = {}
             self._last_option_ticks = {}
+            self._last_option_tick_monotonic = {}
+            self._pending_quote_started = {}
             self._option_token_symbols = {}
             self.mode = mode
             self.running = True
@@ -152,20 +157,24 @@ class OpeningBreakoutService:
             return None
         return bid, ask
 
+    def _cancel_pending_entry(self, token, pending, now, reason):
+        pending["status"] = "CANCELLED"
+        pending["cancel_reason"] = reason
+        self.engine.release_pending_entry(pending["symbol"])
+        self.events.append({
+            "time": now.isoformat(),
+            "event": "PENDING_ENTRY_CANCELLED",
+            "symbol": pending["symbol"],
+            "option_symbol": pending["option_symbol"],
+            "reason": reason,
+        })
+        self._pending_contracts.pop(token, None)
+        self._option_token_symbols.pop(token, None)
+        self._pending_quote_started.pop(token, None)
+
     def _cancel_pending_entries(self, now, reason):
         for token, pending in list(self._pending_contracts.items()):
-            pending["status"] = "CANCELLED"
-            pending["cancel_reason"] = reason
-            self.engine.release_pending_entry(pending["symbol"])
-            self.events.append({
-                "time": now.isoformat(),
-                "event": "PENDING_ENTRY_CANCELLED",
-                "symbol": pending["symbol"],
-                "option_symbol": pending["option_symbol"],
-                "reason": reason,
-            })
-            self._pending_contracts.pop(token, None)
-            self._option_token_symbols.pop(token, None)
+            self._cancel_pending_entry(token, pending, now, reason)
 
     def _exit_open_paper_positions(self, now, reason):
         for position in list(self.positions.values()):
@@ -264,6 +273,25 @@ class OpeningBreakoutService:
             if not self.market_data.is_feed_fresh(5):
                 self._stop_for_feed_failure(now)
                 return
+
+            now_monotonic = monotonic()
+            stale_position = any(
+                position["status"] == "OPEN"
+                and now_monotonic - self._last_option_tick_monotonic.get(
+                    int(position["option_token"]), 0
+                ) > 5
+                for position in self.positions.values()
+            )
+            if stale_position:
+                self._stop_for_feed_failure(now)
+                return
+
+            for token, pending in list(self._pending_contracts.items()):
+                requested_at = self._pending_quote_started.get(token, now_monotonic)
+                if now_monotonic - requested_at > 5:
+                    self._cancel_pending_entry(
+                        token, pending, now, "OPTION_QUOTE_TIMEOUT"
+                    )
 
             self._watchdog_timer = None
             self._schedule_watchdog()
@@ -390,6 +418,7 @@ class OpeningBreakoutService:
                 }
                 self._option_token_symbols[token] = option_symbol
                 self._pending_contracts[token] = pending
+                self._pending_quote_started[token] = monotonic()
 
                 try:
                     subscribed = self.market_data.subscribe_extra(
@@ -452,6 +481,7 @@ class OpeningBreakoutService:
         ltp = float(row.get("last_price") or 0)
         if ltp <= 0:
             return
+        self._last_option_tick_monotonic[token] = monotonic()
 
         if pending:
             prices = self._liquidity_prices(row)
@@ -475,6 +505,7 @@ class OpeningBreakoutService:
             )
             self.positions[position_id] = pending
             self._pending_contracts.pop(token, None)
+            self._pending_quote_started.pop(token, None)
             self.engine.mark_position_open(
                 pending["symbol"],
                 position_id,
