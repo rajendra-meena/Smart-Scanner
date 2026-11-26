@@ -63,7 +63,10 @@ export default function App(){
  const gainers=mode==="EQ"?snapshot?.equity.gainers||[]:snapshot?.futures.gainers||[];
  const losers=mode==="EQ"?snapshot?.equity.losers||[]:snapshot?.futures.losers||[];
  const searched=rows.filter(r=>r.symbol.toLowerCase().includes(search.toLowerCase())||r.name.toLowerCase().includes(search.toLowerCase()));
- const connected=stream==="connected"||snapshot?.status==="connected";\n const tickAgeSeconds=snapshot?.last_tick_received_at?Math.max(0,Math.floor((Date.now()-new Date(snapshot.last_tick_received_at).getTime())/1000)):null;\n const freshTicks=tickAgeSeconds!==null&&tickAgeSeconds<30;\n const tickTime=snapshot?.last_tick_received_at?new Date(snapshot.last_tick_received_at).toLocaleTimeString("en-IN",{timeZone:"Asia/Kolkata"}):null;
+ const connected=stream==="connected"||snapshot?.status==="connected";
+ const tickAgeSeconds=snapshot?.last_tick_received_at?Math.max(0,Math.floor((Date.now()-new Date(snapshot.last_tick_received_at).getTime())/1000)):null;
+ const freshTicks=tickAgeSeconds!==null&&tickAgeSeconds<30;
+ const tickTime=snapshot?.last_tick_received_at?new Date(snapshot.last_tick_received_at).toLocaleTimeString("en-IN",{timeZone:"Asia/Kolkata"}):null;
  const breadth=snapshot?.breadth;
  const maxAbs=Math.max(1,breadth?.advances||0,breadth?.declines||0);
  return <div className="app-shell">
