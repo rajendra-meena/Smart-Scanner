@@ -582,6 +582,11 @@ class OpeningBreakoutService:
                 prices = self._liquidity_prices(row)
                 if prices:
                     position["bid"], position["ask"] = prices
+                    # Mark open PAPER positions to the executable bid-side quote.
+                    position["pnl"] = round(
+                        (prices[0] - position["entry_price"]) * position["quantity"],
+                        2,
+                    )
                 if ltp <= position["stop_price"]:
                     self._close_paper(
                         position,
