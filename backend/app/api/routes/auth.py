@@ -6,6 +6,7 @@ from fastapi.responses import RedirectResponse
 from kiteconnect import KiteConnect
 from app.api.dependencies import get_current_session
 from app.core.config import settings
+from app.core.market_data import market_data_engine
 from app.core.session_store import session_store
 
 router = APIRouter(prefix="/auth", tags=["authentication"])
@@ -39,14 +40,10 @@ def callback(request: Request):
         user = {k: data.get(k) for k in ("user_id","user_name","user_shortname","email","broker","exchanges","products","login_time")}
         key, _ = session_store.create(data["access_token"], user, expiry)
         response = RedirectResponse(f"{settings.frontend_origin}/?auth=success", status_code=303)
-        # Starlette formats datetime cookie expirations as GMT; convert IST to UTC
-        # while preserving the exact same expiry instant.
         response.set_cookie(settings.session_cookie_name, key, expires=expiry.astimezone(timezone.utc), path="/", httponly=True,
                              secure=settings.session_cookie_secure, samesite="lax")
         return response
     except Exception as exc:
-        # Keep credentials and tokens out of logs and browser redirects. Log the exception
-        # server-side so the actual failure (checksum, credentials, SDK/network) is diagnosable.
         logger.exception("Kite Connect session exchange failed (%s)", type(exc).__name__)
         return RedirectResponse(f"{settings.frontend_origin}/?auth=failed", status_code=303)
 
@@ -61,6 +58,9 @@ def logout(request: Request, response: Response):
     response.delete_cookie(settings.session_cookie_name, path="/", httponly=True,
                            secure=settings.session_cookie_secure, samesite="lax")
     if current:
-        try: kite_client(current.access_token).invalidate_access_token()
-        except Exception: pass
+        market_data_engine.stop(current.access_token)
+        try:
+            kite_client(current.access_token).invalidate_access_token()
+        except Exception:
+            logger.exception("Kite access token invalidation failed during logout")
     return {"authenticated":False}
