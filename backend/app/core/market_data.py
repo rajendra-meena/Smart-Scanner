@@ -5,8 +5,6 @@ import time as clock
 from datetime import date, datetime, timezone
 from typing import Any
 
-from app.core.opening_breakout.service import opening_breakout_service
-
 from kiteconnect import KiteConnect, KiteTicker
 
 logger = logging.getLogger(__name__)
@@ -249,3 +247,7 @@ class MarketDataEngine:
 
 
 market_data_engine = MarketDataEngine()
+
+# Import after the singleton exists to avoid a circular dependency.
+from app.core.opening_breakout.service import OpeningBreakoutService
+opening_breakout_service = OpeningBreakoutService(market_data_engine)
