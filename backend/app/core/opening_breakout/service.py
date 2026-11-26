@@ -44,6 +44,8 @@ class OpeningBreakoutService:
 
     def configure(self, values):
         with self.lock:
+            if self.running:
+                raise RuntimeError("Stop the strategy before changing its settings.")
             for key, value in values.items():
                 if hasattr(self.config, key):
                     setattr(self.config, key, value)
