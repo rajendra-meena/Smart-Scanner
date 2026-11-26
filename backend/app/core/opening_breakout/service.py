@@ -65,6 +65,7 @@ class OpeningBreakoutService:
                     "stop_loss_points": self.config.stop_loss_points,
                     "max_positions": self.config.max_positions,
                     "max_spread_percent": self.config.max_spread_percent,
+                    "exit_time": self.config.exit_time,
                 },
             }
 
@@ -77,6 +78,13 @@ class OpeningBreakoutService:
             self.selected_mode = mode
             self.store.save_settings({"selected_mode": mode})
             return self.settings()
+
+    def _exit_clock_time(self):
+        try:
+            hour, minute, second = (int(part) for part in self.config.exit_time.split(":"))
+            return time(hour, minute, second)
+        except (AttributeError, TypeError, ValueError):
+            raise RuntimeError("Exit time must use HH:MM:SS format.")
 
     def _load_universe(self, snapshot):
         fno = set(self.market_data.universe_symbols())
@@ -99,7 +107,8 @@ class OpeningBreakoutService:
         if mode != "PAPER":
             raise RuntimeError("Live order routing is not enabled.")
         now = datetime.now(IST)
-        if now.time() < time(9, 15, 30) or now.time() >= time(9, 30):
+        exit_time = self._exit_clock_time()
+        if now.time() < time(9, 15, 30) or now.time() >= exit_time:
             raise RuntimeError(
                 "Opening Breakout can only be started between 09:15:30 and 09:30 IST."
             )
@@ -126,7 +135,7 @@ class OpeningBreakoutService:
             seconds = max(0, (
                 datetime.combine(
                     datetime.now(IST).date(),
-                    time(9, 30),
+                    exit_time,
                     tzinfo=IST,
                 ) - datetime.now(IST)
             ).total_seconds())
@@ -138,6 +147,7 @@ class OpeningBreakoutService:
             self.events = [{
                 "time": self.started_at,
                 "event": "PAPER_STARTED",
+                "exit_time": self.config.exit_time,
                 "detail": f"{len(self.engine.stocks)} F&O stocks loaded",
             }]
             return self.snapshot()
@@ -386,7 +396,7 @@ class OpeningBreakoutService:
                 self._cancel_watchdog()
                 return
 
-            if now.time() >= time(9, 30):
+            if now.time() >= self._exit_clock_time():
                 self._square_off_paper(rows, now)
                 self.running = False
                 if self._exit_timer:
@@ -508,7 +518,7 @@ class OpeningBreakoutService:
         with self.lock:
             if not self.running:
                 return
-            self._cancel_pending_entries(now, "TIME_EXIT_09_30")
+            self._cancel_pending_entries(now, f"TIME_EXIT_{self.config.exit_time}")
             self._exit_open_paper_positions(now, "TIME_EXIT_09_30")
             self.running = False
             if self._exit_timer:
@@ -518,6 +528,7 @@ class OpeningBreakoutService:
             self.events.append({
                 "time": now.isoformat(),
                 "event": "STRATEGY_TIME_EXIT",
+                "exit_time": self.config.exit_time,
             })
 
     def _handle_option_tick(self, row, now):
