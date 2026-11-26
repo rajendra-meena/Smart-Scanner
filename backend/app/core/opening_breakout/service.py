@@ -15,7 +15,7 @@ class OpeningBreakoutService:
         self.lock=RLock();self.config=BreakoutConfig();self.engine=OpeningBreakoutEngine(self.config)
         self.store=OpeningBreakoutStore();self.running=False;self.mode=None;self.events=[]
         self.positions={};self.started_at=None;self._traded_symbols=set();self._day=None
-        self._instrument_rows=[];self._option_token_symbols={};self._pending_contracts={}
+        self._instrument_rows=[];self._option_token_symbols={};self._pending_contracts={};self._last_option_ticks={}
 
     def configure(self,values):
         with self.lock:
@@ -94,6 +94,7 @@ class OpeningBreakoutService:
     def _handle_option_tick(self,row,now):
         symbol=self._option_token_symbols.get(int(row.get("instrument_token") or 0))
         if not symbol:return
+        self._last_option_ticks[int(row["instrument_token"])]=row
         pending=self._pending_contracts.get(int(row["instrument_token"]))
         ltp=float(row.get("last_price") or 0)
         if ltp<=0:return
@@ -117,6 +118,7 @@ class OpeningBreakoutService:
 
     def _square_off_paper(self,rows,now):
         latest={int(r.get("instrument_token") or 0):float(r.get("last_price") or 0) for r in rows}
+        latest.update({token:float(tick.get("last_price") or 0) for token,tick in self._last_option_ticks.items()})
         for pos in self.positions.values():
             if pos["status"]=="OPEN":
                 price=latest.get(pos["option_token"]) or pos.get("ltp") or pos["entry_price"]
