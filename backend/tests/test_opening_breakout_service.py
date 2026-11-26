@@ -44,6 +44,13 @@ class FakeMarketData:
 class FakeStore:
     def __init__(self):
         self.saved_trades = []
+        self.saved_settings = {}
+
+    def load_settings(self):
+        return dict(self.saved_settings)
+
+    def save_settings(self, values):
+        self.saved_settings.update(values)
 
     def save_trade(self, trade):
         self.saved_trades.append(trade)
@@ -1125,3 +1132,36 @@ def test_square_off_accepts_fresh_option_tick_from_cutoff_batch(
     assert position["exit_reason"] == "TIME_EXIT_09_30"
     assert position["exit_price"] == 95.5
     assert len(store.saved_trades) == 1
+
+
+def test_mode_preference_persists_and_live_remains_not_ready(service_env):
+    service, _, store = service_env
+
+    result = service.set_mode("LIVE")
+
+    assert result["mode"] == "LIVE"
+    assert result["live_ready"] is False
+    assert store.saved_settings["selected_mode"] == "LIVE"
+    assert "not implemented and verified" in result["live_block_reason"]
+
+    service.set_mode("PAPER")
+    assert store.saved_settings["selected_mode"] == "PAPER"
+
+
+def test_settings_are_persisted_and_cannot_change_while_running(service_env):
+    service, market_data, store = service_env
+    result = service.configure({
+        "gainers_count": 5,
+        "losers_count": 4,
+        "stop_loss_points": 18.0,
+        "max_positions": 3,
+        "max_spread_percent": 0.8,
+    })
+
+    assert result["config"]["gainers_count"] == 5
+    assert store.saved_settings["gainers_count"] == 5
+    assert store.saved_settings["losers_count"] == 4
+
+    service.running = True
+    with pytest.raises(RuntimeError, match="Stop the strategy"):
+        service.configure({"gainers_count": 2})
