@@ -665,7 +665,7 @@ class OpeningBreakoutService:
         })
 
     def _square_off_paper(self, rows, now):
-        self._cancel_pending_entries(now, "TIME_EXIT_09_30")
+        self._cancel_pending_entries(now, f"TIME_EXIT_{self.config.exit_time}")
         # Use an option tick delivered in this 09:30 batch before checking
         # quote age; an equity-only batch must not refresh an option quote.
         for row in rows:
