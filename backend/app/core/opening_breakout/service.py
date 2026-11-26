@@ -196,16 +196,18 @@ class OpeningBreakoutService:
         )
 
         persistence_error = None
+        persistence_deferred = False
         try:
-            self.store.save_trade({
+            saved = self.store.save_trade({
                 "id": position["id"],
                 "trade_date": now.date().isoformat(),
                 "symbol": position["symbol"],
                 **position,
             })
+            persistence_deferred = saved is False
         except Exception as exc:
-            # A database outage must not prevent the feed guard from
-            # stopping the strategy and releasing its in-memory position.
+            # A database and recovery-journal failure must not prevent the
+            # feed guard from stopping and releasing the in-memory position.
             persistence_error = str(exc)
 
         self.engine.mark_position_closed(
@@ -213,6 +215,14 @@ class OpeningBreakoutService:
             position["id"],
         )
 
+        if persistence_deferred:
+            self.events.append({
+                "time": now.isoformat(),
+                "event": "PAPER_EXIT_PERSIST_DEFERRED",
+                "symbol": position["symbol"],
+                "reason": "FEED_GUARD_EXIT",
+                "message": "Trade queued in the durable recovery journal",
+            })
         if persistence_error is not None:
             self.events.append({
                 "time": now.isoformat(),
@@ -513,16 +523,41 @@ class OpeningBreakoutService:
             (price - position["entry_price"]) * position["quantity"],
             2,
         )
-        self.store.save_trade({
-            "id": position["id"],
-            "trade_date": now.date().isoformat(),
-            "symbol": position["symbol"],
-            **position,
-        })
+        persistence_error = None
+        persistence_deferred = False
+        try:
+            saved = self.store.save_trade({
+                "id": position["id"],
+                "trade_date": now.date().isoformat(),
+                "symbol": position["symbol"],
+                **position,
+            })
+            persistence_deferred = saved is False
+        except Exception as exc:
+            # Keep the paper lifecycle consistent even if both SQLite and
+            # the fallback journal are unavailable.
+            persistence_error = str(exc)
+
         self.engine.mark_position_closed(
             position["symbol"],
             position["id"],
         )
+        if persistence_deferred:
+            self.events.append({
+                "time": now.isoformat(),
+                "event": "PAPER_EXIT_PERSIST_DEFERRED",
+                "symbol": position["symbol"],
+                "reason": reason,
+                "message": "Trade queued in the durable recovery journal",
+            })
+        if persistence_error is not None:
+            self.events.append({
+                "time": now.isoformat(),
+                "event": "PAPER_EXIT_PERSIST_FAILED",
+                "symbol": position["symbol"],
+                "reason": reason,
+                "message": persistence_error,
+            })
         self.events.append({
             "time": now.isoformat(),
             "event": "PAPER_EXIT",
