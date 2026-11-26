@@ -174,3 +174,21 @@ body{background:radial-gradient(ellipse at 50% -28%,#5746a52b,transparent 48%),l
 .breakout-trade b{color:#ddd4ff}.breakout-trade span{color:#9bacbf}.breakout-trade strong{text-align:right;color:#e4c46e}
 .opening-breakout .info-panel{margin:16px 0}
 @media(max-width:650px){.breakout-stats{grid-template-columns:repeat(2,minmax(0,1fr))}.breakout-toolbar{align-items:flex-start;flex-direction:column}.breakout-actions{flex-wrap:wrap}.breakout-trade{grid-template-columns:1fr 1fr}.breakout-trade strong{grid-column:span 2;text-align:left}}
+
+/* Opening Breakout settings and live execution tables */
+.settings-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin:16px 0 20px}
+.settings-grid label{display:flex;flex-direction:column;gap:8px;color:#aebbd0;font-size:10px;font-weight:700}
+.settings-grid input{height:42px;width:100%;border:1px solid #354760;border-radius:9px;padding:0 12px;background:#101a29;color:#edf3ff;outline:none;font-variant-numeric:tabular-nums}
+.settings-grid input:focus{border-color:#a18bff;box-shadow:0 0 0 3px #a18bff22}
+.settings-note{font-size:10px;line-height:1.7;color:#91a1b8;margin:0 0 17px}
+.strategy-settings{padding:4px 0 10px}
+.table-scroll{width:100%;overflow-x:auto;border:1px solid #2b3b53;border-radius:12px;margin:12px 0 25px}
+.trade-table{width:100%;min-width:900px;border-collapse:collapse;font-variant-numeric:tabular-nums}
+.trade-table th{padding:12px 13px;text-align:left;background:#20233d;color:#bfb6ff;font-size:8px;letter-spacing:.8px;white-space:nowrap}
+.trade-table td{padding:12px 13px;border-top:1px solid #26364b;color:#c7d2e3;font-size:10px;white-space:nowrap}
+.trade-table td b,.trade-table td small{display:block}
+.trade-table td b{color:#edf3ff;font-size:10px}
+.trade-table td small{margin-top:4px;color:#8092ad;font-size:8px}
+.trade-table tbody tr:hover{background:#a18bff0b}
+@media(max-width:900px){.settings-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:560px){.settings-grid{grid-template-columns:1fr}.breakout-toolbar{align-items:flex-start;gap:10px;flex-direction:column}}
