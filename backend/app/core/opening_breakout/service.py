@@ -130,7 +130,7 @@ class OpeningBreakoutService:
     def snapshot(self):
         snap=market_data_engine.snapshot()
         return {"running":self.running,"mode":self.mode,"market_data_ready":snap["status"]=="connected" and bool(snap["last_tick_received_at"]),
-                "watchlist_count":len(self.engine.stocks),"open_positions":sum(p["status"] in ("OPEN","WAITING_QUOTE") for p in self.positions.values()),
+                "watchlist_count":len(self.engine.stocks),"open_positions":sum(p["status"] in ("OPEN","WAITING_QUOTE") for p in self.positions.values())+sum(1 for p in self._pending_contracts.values() if p.get("status")=="WAITING_QUOTE"),
                 "trades_count":len(self.store.trades(datetime.now(IST).date().isoformat())),"watchlist":self.engine.snapshot(),
                 "positions":list(self.positions.values()),"watchlist":self.engine.snapshot(),"events":self.events[-100:],"market_status":snap["status"],
                 "started_at":self.started_at,"live_ready":False,"live_block_reason":"Protective stop order lifecycle, partial-fill recovery and broker reconciliation require verification."}
