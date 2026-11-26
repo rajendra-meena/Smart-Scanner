@@ -248,6 +248,9 @@ class MarketDataEngine:
                 ws.MODE_FULL if full else ws.MODE_QUOTE,
                 normalized,
             )
+            if not full:
+                with self._lock:
+                    self._full_mode_tokens.difference_update(normalized)
         except Exception:
             # Roll back the local subscription registry so a failed option
             # subscription is not silently re-added on the next reconnect.
