@@ -11,7 +11,6 @@ logger = logging.getLogger(__name__)
 
 class MarketDataEngine:
     """Single-process live market feed for the currently authenticated local user."""
-
     MAX_SUBSCRIPTIONS = 3000
     INDEX_NAMES = {
         "NIFTY 50", "NIFTY BANK", "NIFTY IT", "NIFTY FIN SERVICE",
@@ -37,6 +36,7 @@ class MarketDataEngine:
     def _set_status(self, status: str, error: str | None = None):
         with self._lock:
             self._status, self._error = status, error
+        self._publish({"type": "status", "status": status, "error": error})
 
     def start(self, api_key: str, access_token: str):
         with self._lock:
@@ -50,64 +50,35 @@ class MarketDataEngine:
             self._ticker = None
             self._access_token = access_token
             self._status, self._error = "loading_instruments", None
-
         try:
             kite = KiteConnect(api_key=api_key)
             kite.set_access_token(access_token)
             rows = kite.instruments()
             today = date.today()
-            equities = [
-                row for row in rows
-                if row.get("exchange") == "NSE"
-                and row.get("segment") == "NSE"
-                and row.get("instrument_type") == "EQ"
-            ]
-            futures = [
-                row for row in rows
-                if row.get("exchange") == "NFO"
-                and row.get("instrument_type") == "FUT"
-                and row.get("expiry") and row["expiry"] >= today
-            ]
-            # Subscribe only to the nearest available expiry for each futures underlying.
+            equities = [r for r in rows if r.get("exchange") == "NSE" and r.get("segment") == "NSE" and r.get("instrument_type") == "EQ"]
+            futures = [r for r in rows if r.get("exchange") == "NFO" and r.get("instrument_type") == "FUT" and r.get("expiry") and r["expiry"] >= today]
             nearest: dict[str, dict[str, Any]] = {}
             for row in futures:
                 name = row.get("name") or row.get("tradingsymbol", "")
                 if name not in nearest or row["expiry"] < nearest[name]["expiry"]:
                     nearest[name] = row
-            indices = [
-                row for row in rows
-                if row.get("exchange") == "NSE"
-                and row.get("segment") == "INDICES"
-                and row.get("tradingsymbol") in self.INDEX_NAMES
-            ]
-            selected = equities + list(nearest.values()) + indices
-            selected = selected[: self.MAX_SUBSCRIPTIONS]
-            instrument_map = {int(row["instrument_token"]): {
-                "instrument_token": int(row["instrument_token"]),
-                "symbol": row.get("tradingsymbol"),
-                "name": row.get("name") or row.get("tradingsymbol"),
-                "exchange": row.get("exchange"),
-                "segment": row.get("segment"),
-                "instrument_type": row.get("instrument_type"),
-                "expiry": row.get("expiry").isoformat() if row.get("expiry") else None,
-                "lot_size": row.get("lot_size"),
-            } for row in selected}
+            indices = [r for r in rows if r.get("exchange") == "NSE" and r.get("segment") == "INDICES" and r.get("tradingsymbol") in self.INDEX_NAMES]
+            selected = (equities + list(nearest.values()) + indices)[:self.MAX_SUBSCRIPTIONS]
+            instrument_map = {int(r["instrument_token"]): {
+                "instrument_token": int(r["instrument_token"]), "symbol": r.get("tradingsymbol"),
+                "name": r.get("name") or r.get("tradingsymbol"), "exchange": r.get("exchange"),
+                "segment": r.get("segment"), "instrument_type": r.get("instrument_type") or "INDEX",
+                "expiry": r.get("expiry").isoformat() if r.get("expiry") else None, "lot_size": r.get("lot_size")
+            } for r in selected}
             tokens = list(instrument_map)
             with self._lock:
-                self._instruments = instrument_map
-                self._subscribed = tokens
-                self._ticks = {}
-
+                self._instruments, self._subscribed, self._ticks = instrument_map, tokens, {}
             ticker = KiteTicker(api_key, access_token)
-            ticker.on_ticks = self._on_ticks
-            ticker.on_connect = self._on_connect
-            ticker.on_close = self._on_close
-            ticker.on_error = self._on_error
-            ticker.on_reconnect = self._on_reconnect
-            ticker.on_noreconnect = self._on_noreconnect
+            ticker.on_ticks, ticker.on_connect = self._on_ticks, self._on_connect
+            ticker.on_close, ticker.on_error = self._on_close, self._on_error
+            ticker.on_reconnect, ticker.on_noreconnect = self._on_reconnect, self._on_noreconnect
             with self._lock:
-                self._ticker = ticker
-                self._status = "connecting"
+                self._ticker, self._status = ticker, "connecting"
             ticker.connect(threaded=True)
         except Exception as exc:
             logger.exception("Market data engine startup failed")
@@ -132,23 +103,22 @@ class MarketDataEngine:
                 if not meta:
                     continue
                 ohlc = tick.get("ohlc") or {}
-                close = float(ohlc.get("close") or 0)
-                ltp = float(tick.get("last_price") or 0)
-                enriched = {
-                    **meta,
-                    "last_price": ltp,
-                    "close": close,
-                    "open": float(ohlc.get("open") or 0),
-                    "high": float(ohlc.get("high") or 0),
-                    "low": float(ohlc.get("low") or 0),
-                    "volume": int(tick.get("volume") or 0),
-                    "change": round(ltp - close, 2) if close else 0,
-                    "change_percent": round(((ltp - close) / close) * 100, 2) if close else 0,
-                    "exchange_timestamp": tick.get("exchange_timestamp").isoformat() if tick.get("exchange_timestamp") else None,
-                }
+                close, ltp = float(ohlc.get("close") or 0), float(tick.get("last_price") or 0)
+                enriched = {**meta, "last_price": ltp, "close": close,
+                    "open": float(ohlc.get("open") or 0), "high": float(ohlc.get("high") or 0),
+                    "low": float(ohlc.get("low") or 0), "volume": int(tick.get("volume") or 0),
+                    "change": round(ltp-close, 2) if close else 0,
+                    "change_percent": round((ltp-close)/close*100, 2) if close else 0,
+                    "exchange_timestamp": tick.get("exchange_timestamp").isoformat() if tick.get("exchange_timestamp") else None}
                 self._ticks[token] = enriched
                 changed.append(enriched)
-        self._publish({"type": "ticks", "data": changed})
+            equity = [r for r in self._ticks.values() if r["instrument_type"] == "EQ"]
+            advances = sum(r["change"] > 0 for r in equity)
+            declines = sum(r["change"] < 0 for r in equity)
+            unchanged = sum(r["change"] == 0 for r in equity)
+            breadth = {"advances": advances, "declines": declines, "unchanged": unchanged,
+                "total": len(equity), "advance_decline_ratio": round(advances/declines, 2) if declines else None}
+        self._publish({"type": "ticks", "data": changed, "breadth": breadth})
 
     def _on_close(self, ws, code, reason):
         self._set_status("disconnected", str(reason) if reason else None)
@@ -182,27 +152,23 @@ class MarketDataEngine:
     def snapshot(self):
         with self._lock:
             rows = list(self._ticks.values())
-            instruments = len(self._subscribed)
-            status, error = self._status, self._error
+            instruments, status, error = len(self._subscribed), self._status, self._error
         equity = [r for r in rows if r["instrument_type"] == "EQ"]
         futures = [r for r in rows if r["instrument_type"] == "FUT"]
         indices = [r for r in rows if r["segment"] == "INDICES"]
         def ranked(items, positive):
             valid = [r for r in items if r["close"] > 0]
             return sorted(valid, key=lambda r: r["change_percent"], reverse=positive)
-        advances = sum(1 for r in equity if r["change"] > 0)
-        declines = sum(1 for r in equity if r["change"] < 0)
-        unchanged = sum(1 for r in equity if r["change"] == 0)
-        return {
-            "status": status, "error": error, "subscribed_instruments": instruments,
+        advances, declines = sum(r["change"] > 0 for r in equity), sum(r["change"] < 0 for r in equity)
+        unchanged = sum(r["change"] == 0 for r in equity)
+        return {"status": status, "error": error, "subscribed_instruments": instruments,
             "received_instruments": len(rows),
             "breadth": {"advances": advances, "declines": declines, "unchanged": unchanged,
-                        "total": len(equity), "advance_decline_ratio": round(advances / declines, 2) if declines else None},
+                "total": len(equity), "advance_decline_ratio": round(advances/declines, 2) if declines else None},
             "equity": {"gainers": ranked(equity, True)[:50], "losers": ranked(equity, False)[:50]},
             "futures": {"gainers": ranked(futures, True)[:50], "losers": ranked(futures, False)[:50]},
-            "indices": indices,
-            "updated_at": max((r["exchange_timestamp"] or "" for r in rows), default=None),
-        }
+            "all_equity": equity, "all_futures": futures, "indices": indices,
+            "updated_at": max((r["exchange_timestamp"] or "" for r in rows), default=None)}
 
     def _publish(self, message):
         loop = self._loop
