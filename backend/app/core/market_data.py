@@ -1,7 +1,8 @@
 import asyncio
 import logging
 import threading
-from datetime import date
+import time as clock
+from datetime import date, datetime, timezone
 from typing import Any
 
 from kiteconnect import KiteConnect, KiteTicker
@@ -32,6 +33,8 @@ class MarketDataEngine:
         self._subscribed: list[int] = []
         self._loop = None
         self._clients: set[asyncio.Queue] = set()
+        self._last_tick_received_at = None
+        self._invalid_tick_count = 0
 
     def _set_status(self, status: str, error: str | None = None):
         with self._lock:
@@ -73,6 +76,8 @@ class MarketDataEngine:
             tokens = list(instrument_map)
             with self._lock:
                 self._instruments, self._subscribed, self._ticks = instrument_map, tokens, {}
+                self._last_tick_received_at = None
+                self._invalid_tick_count = 0
             ticker = KiteTicker(api_key, access_token)
             ticker.on_ticks, ticker.on_connect = self._on_ticks, self._on_connect
             ticker.on_close, ticker.on_error = self._on_close, self._on_error
@@ -96,6 +101,7 @@ class MarketDataEngine:
 
     def _on_ticks(self, ws, ticks):
         changed = []
+        invalid = 0
         with self._lock:
             for tick in ticks:
                 token = int(tick["instrument_token"])
@@ -103,22 +109,32 @@ class MarketDataEngine:
                 if not meta:
                     continue
                 ohlc = tick.get("ohlc") or {}
-                close, ltp = float(ohlc.get("close") or 0), float(tick.get("last_price") or 0)
+                close = float(ohlc.get("close") or 0)
+                ltp = float(tick.get("last_price") or 0)
+                # Never interpret missing/zero prices as a 100% loss or market breadth.
+                if ltp <= 0 or close <= 0:
+                    invalid += 1
+                    continue
                 enriched = {**meta, "last_price": ltp, "close": close,
                     "open": float(ohlc.get("open") or 0), "high": float(ohlc.get("high") or 0),
                     "low": float(ohlc.get("low") or 0), "volume": int(tick.get("volume") or 0),
-                    "change": round(ltp-close, 2) if close else 0,
-                    "change_percent": round((ltp-close)/close*100, 2) if close else 0,
+                    "change": round(ltp-close, 2),
+                    "change_percent": round((ltp-close)/close*100, 2),
                     "exchange_timestamp": tick.get("exchange_timestamp").isoformat() if tick.get("exchange_timestamp") else None}
                 self._ticks[token] = enriched
                 changed.append(enriched)
+            self._invalid_tick_count += invalid
+            if changed:
+                self._last_tick_received_at = datetime.now(timezone.utc).isoformat()
             equity = [r for r in self._ticks.values() if r["instrument_type"] == "EQ"]
             advances = sum(r["change"] > 0 for r in equity)
             declines = sum(r["change"] < 0 for r in equity)
             unchanged = sum(r["change"] == 0 for r in equity)
             breadth = {"advances": advances, "declines": declines, "unchanged": unchanged,
                 "total": len(equity), "advance_decline_ratio": round(advances/declines, 2) if declines else None}
-        self._publish({"type": "ticks", "data": changed, "breadth": breadth})
+        if changed:
+            self._publish({"type": "ticks", "data": changed, "breadth": breadth,
+                           "last_tick_received_at": self._last_tick_received_at})
 
     def _on_close(self, ws, code, reason):
         self._set_status("disconnected", str(reason) if reason else None)
@@ -141,6 +157,7 @@ class MarketDataEngine:
             self._access_token = None
             self._ticks.clear()
             self._subscribed.clear()
+            self._last_tick_received_at = None
             self._status, self._error = "disconnected", None
         if ticker:
             try:
@@ -153,16 +170,19 @@ class MarketDataEngine:
         with self._lock:
             rows = list(self._ticks.values())
             instruments, status, error = len(self._subscribed), self._status, self._error
+            last_tick = self._last_tick_received_at
+            invalid = self._invalid_tick_count
         equity = [r for r in rows if r["instrument_type"] == "EQ"]
         futures = [r for r in rows if r["instrument_type"] == "FUT"]
         indices = [r for r in rows if r["segment"] == "INDICES"]
         def ranked(items, positive):
-            valid = [r for r in items if r["close"] > 0]
+            valid = [r for r in items if r["last_price"] > 0 and r["close"] > 0]
             return sorted(valid, key=lambda r: r["change_percent"], reverse=positive)
         advances, declines = sum(r["change"] > 0 for r in equity), sum(r["change"] < 0 for r in equity)
         unchanged = sum(r["change"] == 0 for r in equity)
         return {"status": status, "error": error, "subscribed_instruments": instruments,
-            "received_instruments": len(rows),
+            "received_instruments": len(rows), "invalid_ticks_ignored": invalid,
+            "last_tick_received_at": last_tick,
             "breadth": {"advances": advances, "declines": declines, "unchanged": unchanged,
                 "total": len(equity), "advance_decline_ratio": round(advances/declines, 2) if declines else None},
             "equity": {"gainers": ranked(equity, True)[:50], "losers": ranked(equity, False)[:50]},
