@@ -83,7 +83,7 @@ class SQLiteSessionStore:
                     (session_hash, encrypted_access_token, user_json, expires_at)
                 VALUES (?, ?, ?, ?)
                 """,
-                (self._digest(key), encrypted, json.dumps(user), expires_at.isoformat()),
+                (self._digest(key), encrypted, json.dumps(user, default=str), expires_at.isoformat()),
             )
         return key, value
 
