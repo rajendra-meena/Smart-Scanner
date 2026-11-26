@@ -14,9 +14,37 @@ class StartRequest(BaseModel):
 
 
 class ConfigRequest(BaseModel):
+    gainers_count: int = Field(default=3, ge=1, le=20)
+    losers_count: int = Field(default=3, ge=1, le=20)
     stop_loss_points: float = Field(default=15, gt=0, le=100)
     max_positions: int = Field(default=6, ge=1, le=6)
     max_spread_percent: float = Field(default=1.0, gt=0, le=10)
+
+
+class ModeRequest(BaseModel):
+    mode: str = Field(pattern="^(PAPER|LIVE)$")
+
+
+@router.get("/settings")
+def settings(current=Depends(get_current_session)):
+    return opening_breakout_service.settings()
+
+
+@router.put("/settings")
+def update_settings(payload: ConfigRequest, current=Depends(get_current_session)):
+    try:
+        opening_breakout_service.configure(payload.model_dump())
+        return opening_breakout_service.settings()
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.put("/mode")
+def update_mode(payload: ModeRequest, current=Depends(get_current_session)):
+    try:
+        return opening_breakout_service.set_mode(payload.mode)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @router.get("/status")
