@@ -72,7 +72,9 @@ class OpeningBreakoutService:
             if not self.running:return
             if now.date().isoformat()!=self._day:self.running=False;return
             if now.time()>=time(9,30):
-                self._square_off_paper(rows,now);self.running=False;return
+                self._square_off_paper(rows,now);self.running=False
+                if self._exit_timer:self._exit_timer.cancel();self._exit_timer=None
+                return
             for row in rows:
                 typ=row.get("instrument_type")
                 if typ in ("CE","PE"):
