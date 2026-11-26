@@ -25,3 +25,7 @@
 
 .mover-stack{display:flex;flex-direction:column;gap:16px}.mover-table-card{padding:16px 0 0}.mover-table-card>.mover-title{padding:0 16px 12px;margin:0}.mover-table-wrap{width:100%;overflow-x:auto;border-top:1px solid #2a3b52}.mover-table{width:100%;border-collapse:collapse;min-width:790px;font-variant-numeric:tabular-nums}.mover-table th{background:#252344;color:#c9c3ff;font-size:9px;letter-spacing:.55px;font-weight:800;text-align:right;padding:12px 13px;white-space:nowrap}.mover-table th:first-child,.mover-table td:first-child{text-align:left;padding-left:17px}.mover-table td{border-bottom:1px solid #26364b;color:#c4cfdf;text-align:right;font-size:10px;padding:10px 13px;white-space:nowrap}.mover-table tbody tr:nth-child(even){background:#ffffff04}.mover-table tbody tr:hover{background:#a18bff12}.mover-table td.symbol-cell{color:#9fbaff;font-weight:700}.mover-table td.ltp-cell{color:#f0f4fc;font-weight:800}.mover-table td.up{color:#64dfa7;font-weight:800}.mover-table td.down{color:#ff7d91;font-weight:800}
 @media(max-width:760px){.mover-table{min-width:760px}.mover-table th,.mover-table td{padding:9px 10px}.mover-table-card{padding-top:13px}}
+/* Keep gainers and losers side by side on desktop; stack only on narrow screens. */
+.mover-stack{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));align-items:start;gap:16px}
+.mover-table-card{min-width:0}
+@media(max-width:760px){.mover-stack{grid-template-columns:1fr}}
