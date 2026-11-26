@@ -201,6 +201,7 @@ def add_open_position(service, token=202):
 
     service.positions[position_id] = position
     service._option_token_symbols[token] = position["option_symbol"]
+    service._last_option_tick_monotonic[token] = service_module.monotonic()
     service.engine.mark_position_open("XYZ", position_id)
 
     return position
@@ -1059,3 +1060,44 @@ def test_watchdog_cancels_pending_entry_when_option_quote_never_arrives(
     assert service.engine.stocks["ABC"].entry_count == 0
     assert service._watchdog_timer is not None
     assert service._watchdog_timer.started is True
+
+
+
+def test_square_off_never_uses_stale_cached_option_bid(
+    service_env, monkeypatch
+):
+    service, _, store = service_env
+    position = add_open_position(service, token=202)
+    service.running = True
+    service._last_option_ticks[202] = option_tick(
+        202, ltp=100.0, bid=99.5, ask=100.0
+    )
+    service._last_option_tick_monotonic[202] = 10.0
+    monkeypatch.setattr(service_module, "monotonic", lambda: 16.0)
+
+    service._square_off_paper([], NOW)
+
+    assert position["status"] == "CLOSED_UNPRICED"
+    assert position["exit_price"] is None
+    assert position["exit_reason"] == "TIME_EXIT_09_30_UNPRICED"
+    assert position.get("pnl") is None
+    assert service.engine.stocks["XYZ"].active_position_id is None
+    assert len(store.saved_trades) == 1
+    assert store.saved_trades[0]["exit_price"] is None
+
+
+def test_square_off_accepts_fresh_option_tick_from_cutoff_batch(
+    service_env, monkeypatch
+):
+    service, _, store = service_env
+    position = add_open_position(service, token=202)
+    service.running = True
+    monkeypatch.setattr(service_module, "monotonic", lambda: 20.0)
+
+    fresh_tick = option_tick(202, ltp=96.0, bid=95.5, ask=95.8)
+    service._square_off_paper([fresh_tick], NOW)
+
+    assert position["status"] == "CLOSED"
+    assert position["exit_reason"] == "TIME_EXIT_09_30"
+    assert position["exit_price"] == 95.5
+    assert len(store.saved_trades) == 1
