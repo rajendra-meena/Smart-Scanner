@@ -127,6 +127,7 @@ class MarketDataEngine:
                     "exchange_timestamp": tick.get("exchange_timestamp").isoformat() if tick.get("exchange_timestamp") else None}
                 depth = tick.get("depth") or {}
                 enriched["depth"] = depth
+                self._instruments[token] = meta
                 self._ticks[token] = enriched
                 changed.append(enriched)
             self._invalid_tick_count += invalid
