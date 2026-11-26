@@ -176,3 +176,33 @@ def test_option_subscription_rejects_unknown_token_without_mutation():
     assert engine._subscribed == []
     assert engine._instruments == {}
     assert engine._full_mode_tokens == set()
+
+
+def test_strategy_settings_persist_across_store_instances(tmp_path):
+    path = str(tmp_path / "opening_breakout.sqlite3")
+    first = OpeningBreakoutStore(path)
+    first.save_settings({
+        "selected_mode": "LIVE",
+        "gainers_count": 5,
+        "losers_count": 4,
+        "stop_loss_points": 18.5,
+    })
+
+    second = OpeningBreakoutStore(path)
+    assert second.load_settings() == {
+        "selected_mode": "LIVE",
+        "gainers_count": 5,
+        "losers_count": 4,
+        "stop_loss_points": 18.5,
+    }
+
+
+def test_strategy_settings_update_replaces_existing_values(tmp_path):
+    store = OpeningBreakoutStore(str(tmp_path / "opening_breakout.sqlite3"))
+    store.save_settings({"selected_mode": "LIVE", "gainers_count": 5})
+    store.save_settings({"selected_mode": "PAPER"})
+
+    assert store.load_settings() == {
+        "selected_mode": "PAPER",
+        "gainers_count": 5,
+    }
