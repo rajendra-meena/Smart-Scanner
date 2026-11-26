@@ -35,6 +35,7 @@ class MarketDataEngine:
         self._clients: set[asyncio.Queue] = set()
         self._last_tick_received_at = None
         self._invalid_tick_count = 0
+        self._fno_symbols: set[str] = set()
 
     def _set_status(self, status: str, error: str | None = None):
         with self._lock:
@@ -60,6 +61,7 @@ class MarketDataEngine:
             today = date.today()
             equities = [r for r in rows if r.get("exchange") == "NSE" and r.get("segment") == "NSE" and r.get("instrument_type") == "EQ"]
             futures = [r for r in rows if r.get("exchange") == "NFO" and r.get("instrument_type") == "FUT" and r.get("expiry") and r["expiry"] >= today]
+            self._fno_symbols = {str(r.get("name") or r.get("tradingsymbol", "")).strip().upper() for r in rows if r.get("exchange") == "NFO" and r.get("instrument_type") in ("FUT", "CE", "PE") and (r.get("name") or r.get("tradingsymbol"))}
             nearest: dict[str, dict[str, Any]] = {}
             for row in futures:
                 name = row.get("name") or row.get("tradingsymbol", "")
@@ -165,6 +167,10 @@ class MarketDataEngine:
             except Exception:
                 logger.exception("KiteTicker shutdown failed")
         self._publish({"type": "status", "status": "disconnected"})
+
+    def universe_symbols(self):
+        with self._lock:
+            return sorted(self._fno_symbols)
 
     def snapshot(self):
         with self._lock:
