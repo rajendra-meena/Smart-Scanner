@@ -432,6 +432,7 @@ class OpeningBreakoutService:
                 except Exception as exc:
                     self._pending_contracts.pop(token, None)
                     self._option_token_symbols.pop(token, None)
+                    self._pending_quote_started.pop(token, None)
                     self.engine.release_pending_entry(symbol)
                     self.events.append({
                         "time": now.isoformat(),
