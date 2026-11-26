@@ -5,6 +5,8 @@ import time as clock
 from datetime import date, datetime, timezone
 from typing import Any
 
+from app.core.opening_breakout.service import opening_breakout_service
+
 from kiteconnect import KiteConnect, KiteTicker
 
 logger = logging.getLogger(__name__)
@@ -135,6 +137,10 @@ class MarketDataEngine:
             breadth = {"advances": advances, "declines": declines, "unchanged": unchanged,
                 "total": len(equity), "advance_decline_ratio": round(advances/declines, 2) if declines else None}
         if changed:
+            try:
+                opening_breakout_service.on_market_tick(changed)
+            except Exception:
+                logger.exception("Opening breakout tick processing failed")
             self._publish({"type": "ticks", "data": changed, "breadth": breadth,
                            "last_tick_received_at": self._last_tick_received_at})
 
