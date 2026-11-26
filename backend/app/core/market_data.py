@@ -38,6 +38,7 @@ class MarketDataEngine:
         self._last_tick_received_at = None
         self._invalid_tick_count = 0
         self._fno_symbols: set[str] = set()
+        self._option_instruments: list[dict[str, Any]] = []
 
     def _set_status(self, status: str, error: str | None = None):
         with self._lock:
@@ -63,7 +64,8 @@ class MarketDataEngine:
             today = date.today()
             equities = [r for r in rows if r.get("exchange") == "NSE" and r.get("segment") == "NSE" and r.get("instrument_type") == "EQ"]
             futures = [r for r in rows if r.get("exchange") == "NFO" and r.get("instrument_type") == "FUT" and r.get("expiry") and r["expiry"] >= today]
-            self._fno_symbols = {str(r.get("name") or r.get("tradingsymbol", "")).strip().upper() for r in rows if r.get("exchange") == "NFO" and r.get("instrument_type") in ("FUT", "CE", "PE") and (r.get("name") or r.get("tradingsymbol"))}
+            self._fno_symbols = {str(r.get("name") or "").strip().upper() for r in rows if r.get("exchange") == "NFO" and r.get("instrument_type") in ("FUT", "CE", "PE") and r.get("name")}
+            self._option_instruments = [{**r, "expiry": r["expiry"].isoformat() if r.get("expiry") else None, "strike": float(r.get("strike") or 0), "lot_size": int(r.get("lot_size") or 0), "instrument_token": int(r["instrument_token"])} for r in rows if r.get("exchange") == "NFO" and r.get("instrument_type") in ("CE", "PE") and r.get("expiry") and r.get("name")]
             nearest: dict[str, dict[str, Any]] = {}
             for row in futures:
                 name = row.get("name") or row.get("tradingsymbol", "")
@@ -125,6 +127,8 @@ class MarketDataEngine:
                     "change": round(ltp-close, 2),
                     "change_percent": round((ltp-close)/close*100, 2),
                     "exchange_timestamp": tick.get("exchange_timestamp").isoformat() if tick.get("exchange_timestamp") else None}
+                depth = tick.get("depth") or {}
+                enriched["depth"] = depth
                 self._ticks[token] = enriched
                 changed.append(enriched)
             self._invalid_tick_count += invalid
@@ -166,6 +170,7 @@ class MarketDataEngine:
             self._ticks.clear()
             self._subscribed.clear()
             self._fno_symbols.clear()
+            self._option_instruments.clear()
             self._last_tick_received_at = None
             self._status, self._error = "disconnected", None
         if ticker:
@@ -174,6 +179,20 @@ class MarketDataEngine:
             except Exception:
                 logger.exception("KiteTicker shutdown failed")
         self._publish({"type": "status", "status": "disconnected"})
+
+    def option_instruments(self, underlying: str | None = None):
+        with self._lock:
+            rows = list(self._option_instruments)
+        return [r for r in rows if underlying is None or str(r.get("name") or "").upper() == underlying.upper()]
+
+    def subscribe_extra(self, tokens: list[int], full: bool = True):
+        with self._lock:
+            ws = self._ticker
+        if not ws or not tokens:
+            return False
+        ws.subscribe(tokens)
+        ws.set_mode(ws.MODE_FULL if full else ws.MODE_QUOTE, tokens)
+        return True
 
     def universe_symbols(self):
         with self._lock:
