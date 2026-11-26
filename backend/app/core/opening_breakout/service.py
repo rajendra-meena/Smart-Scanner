@@ -85,8 +85,10 @@ class OpeningBreakoutService:
                 contract=self._select_atm(symbol,signal)
                 if not contract:
                     self.events.append({"time":now.isoformat(),"event":"SIGNAL_SKIPPED","symbol":symbol,"reason":"No valid nearest ATM option in current instrument master"});continue
-                self._option_token_symbols[int(contract["instrument_token"])]=contract["tradingsymbol"]
-                self.market_data.subscribe_extra([int(contract["instrument_token"])],full=True)
+                token=int(contract["instrument_token"])
+                self._option_token_symbols[token]=contract["tradingsymbol"]
+                self._pending_contracts[token]={"id":str(uuid4()),"symbol":symbol,"option_symbol":contract["tradingsymbol"],"option_token":token,"direction":signal,"lot_size":int(contract.get("lot_size") or 0),"mode":"PAPER","status":"WAITING_QUOTE"}
+                self.market_data.subscribe_extra([token],full=True)
                 self.events.append({"time":now.isoformat(),"event":"SIGNAL","symbol":symbol,"direction":signal,
                                     "option_symbol":contract["tradingsymbol"],"status":"WAITING_OPTION_TICK",
                                     "detail":"ATM option subscribed; waiting for fresh full-depth option tick."})
@@ -103,6 +105,7 @@ class OpeningBreakoutService:
             pending.update(status="OPEN",entry_price=ltp,stop_price=round(ltp-self.config.stop_loss_points,2),
                            ltp=ltp,quantity=int(pending["lot_size"]),opened_at=now.isoformat())
             self.positions[pending["id"]]=pending
+            self._pending_contracts.pop(int(row["instrument_token"]),None)
             self.events.append({"time":now.isoformat(),"event":"PAPER_ENTRY","symbol":pending["symbol"],"option_symbol":symbol,"price":ltp})
             return
         for pos in self.positions.values():
