@@ -1,6 +1,7 @@
 import hashlib
 import json
 import sqlite3
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -42,10 +43,18 @@ class SQLiteSessionStore:
     def _digest(key: str) -> str:
         return hashlib.sha256(key.encode("utf-8")).hexdigest()
 
+    @contextmanager
     def _connect(self):
         connection = sqlite3.connect(str(self._db_path), timeout=15)
         connection.row_factory = sqlite3.Row
-        return connection
+        try:
+            yield connection
+            connection.commit()
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
 
     def _initialize(self):
         with self._lock, self._connect() as db:
