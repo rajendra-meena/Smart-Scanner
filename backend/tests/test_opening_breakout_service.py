@@ -1165,3 +1165,35 @@ def test_settings_are_persisted_and_cannot_change_while_running(service_env):
     service.running = True
     with pytest.raises(RuntimeError, match="Stop the strategy"):
         service.configure({"gainers_count": 2})
+
+
+def test_open_paper_position_updates_unrealized_pnl_from_bid(service_env):
+    service, _, _ = service_env
+    pending = add_pending_entry(service, token=303)
+
+    service._handle_option_tick(
+        option_tick(303, ltp=100.0, bid=99.8, ask=100.0),
+        NOW,
+    )
+    position = service.positions[pending["id"]]
+
+    service._handle_option_tick(
+        option_tick(303, ltp=103.0, bid=102.5, ask=102.8),
+        NOW,
+    )
+
+    assert position["pnl"] == 62.5
+    assert position["ltp"] == 103.0
+    assert position["bid"] == 102.5
+
+
+def test_configured_exit_time_is_used_for_squareoff_timer(service_env, monkeypatch):
+    service, market_data, _ = service_env
+    prepare_start_environment(service, market_data, monkeypatch)
+    service.configure({"exit_time": "09:28:00"})
+
+    result = service.start("PAPER", "token")
+
+    assert result["running"] is True
+    assert service._exit_timer.seconds == 8 * 60
+    assert service.events[0]["exit_time"] == "09:28:00"
