@@ -98,7 +98,7 @@ export default function App(){
      </section>
    </>}
    <footer className="footer"><span>SMART SCANNER · MARKET DATA</span><span><ShieldCheck size={12}/> PRIVATE SESSION · NO ORDERS PLACED</span></footer>
-  </div></main>;
+  </div></main></div>;
 }
 
 function MoverList({title,rows,positive=false}:{title:string;rows:MarketRow[];positive?:boolean}){
