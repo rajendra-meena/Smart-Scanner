@@ -5,6 +5,7 @@ from typing import Literal
 Direction = Literal["CE", "PE"]
 Mode = Literal["PAPER", "LIVE"]
 
+
 @dataclass(slots=True)
 class BreakoutConfig:
     enabled: bool = False
@@ -17,10 +18,11 @@ class BreakoutConfig:
     one_lot: bool = True
     stop_loss_points: float = 15.0
     allow_ce_pe_simultaneously: bool = True
-    allow_reentry: bool = False
+    allow_reentry: bool = True
     require_liquidity: bool = True
     max_spread_percent: float = 1.0
     min_depth_quantity: int = 1
+
 
 @dataclass(slots=True)
 class StockState:
@@ -36,6 +38,10 @@ class StockState:
     signal: Direction | None = None
     excursion_up: bool = False
     excursion_down: bool = False
+    entry_count: int = 0
+    pending_entry: bool = False
+    active_position_id: str | None = None
+
 
 @dataclass(slots=True)
 class Position:
