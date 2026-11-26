@@ -161,3 +161,16 @@ body{background:radial-gradient(ellipse at 50% -28%,#5746a52b,transparent 48%),l
  .footer{font-size:7px;letter-spacing:.7px}
  .footer span:last-child{display:none}
 }
+
+/* Opening Price Breakout workspace */
+.breakout-toolbar{display:flex;justify-content:space-between;align-items:center;gap:14px;margin:8px 0 20px;color:#98a9c2;font-size:10px}
+.breakout-actions{display:flex;gap:10px;margin-bottom:20px}
+.breakout-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:20px 0}
+.breakout-stats>div{border:1px solid #30415a;border-radius:12px;background:#101c2c;padding:15px;display:flex;flex-direction:column;gap:9px}
+.breakout-stats small{font-size:8px;letter-spacing:1px;color:#91a2ba;font-weight:800}
+.breakout-stats strong{font:800 21px Manrope;color:#edf3ff}
+.breakout-trades{display:flex;flex-direction:column;gap:8px}
+.breakout-trade{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;align-items:center;padding:12px;border:1px solid #2b3e57;background:#101b2b;border-radius:9px;font-size:10px}
+.breakout-trade b{color:#ddd4ff}.breakout-trade span{color:#9bacbf}.breakout-trade strong{text-align:right;color:#e4c46e}
+.opening-breakout .info-panel{margin:16px 0}
+@media(max-width:650px){.breakout-stats{grid-template-columns:repeat(2,minmax(0,1fr))}.breakout-toolbar{align-items:flex-start;flex-direction:column}.breakout-actions{flex-wrap:wrap}.breakout-trade{grid-template-columns:1fr 1fr}.breakout-trade strong{grid-column:span 2;text-align:left}}
