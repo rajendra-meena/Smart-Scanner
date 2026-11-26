@@ -37,6 +37,7 @@ class MarketDataEngine:
         self._invalid_tick_count = 0
         self._fno_symbols: set[str] = set()
         self._option_instruments: list[dict[str, Any]] = []
+        self._full_mode_tokens: set[int] = set()
 
     def _set_status(self, status: str, error: str | None = None):
         with self._lock:
@@ -97,9 +98,14 @@ class MarketDataEngine:
     def _on_connect(self, ws, response):
         with self._lock:
             tokens = list(self._subscribed)
+            full_tokens = list(self._full_mode_tokens)
         if tokens:
             ws.subscribe(tokens)
-            ws.set_mode(ws.MODE_QUOTE, tokens)
+            quote_tokens = [token for token in tokens if token not in self._full_mode_tokens]
+            if quote_tokens:
+                ws.set_mode(ws.MODE_QUOTE, quote_tokens)
+            if full_tokens:
+                ws.set_mode(ws.MODE_FULL, full_tokens)
         self._set_status("connected")
         logger.info("KiteTicker connected; subscribed to %s instruments", len(tokens))
 
@@ -170,6 +176,7 @@ class MarketDataEngine:
             self._subscribed.clear()
             self._fno_symbols.clear()
             self._option_instruments.clear()
+            self._full_mode_tokens.clear()
             self._last_tick_received_at = None
             self._status, self._error = "disconnected", None
         if ticker:
@@ -185,13 +192,28 @@ class MarketDataEngine:
         return [r for r in rows if underlying is None or str(r.get("name") or "").upper() == underlying.upper()]
 
     def subscribe_extra(self, tokens: list[int], full: bool = True):
+        if not tokens:
+            return False
         with self._lock:
             ws = self._ticker
+            option_by_token = {int(row['instrument_token']): row for row in self._option_instruments}
             for token in tokens:
-                if token not in self._subscribed:
-                    self._subscribed.append(token)
-            new_tokens = [token for token in tokens if token not in self._instruments]
-        if not ws or not tokens:
+                row = option_by_token.get(int(token))
+                if row is None:
+                    continue
+                self._instruments[int(token)] = {
+                    'instrument_token': int(token), 'symbol': row.get('tradingsymbol'),
+                    'name': row.get('name') or row.get('tradingsymbol'), 'exchange': 'NFO',
+                    'segment': row.get('segment') or 'NFO-OPT',
+                    'instrument_type': row.get('instrument_type'), 'expiry': row.get('expiry'),
+                    'lot_size': int(row.get('lot_size') or 0), 'strike': float(row.get('strike') or 0),
+                    'tick_size': float(row.get('tick_size') or 0.05),
+                }
+                if int(token) not in self._subscribed:
+                    self._subscribed.append(int(token))
+                if full:
+                    self._full_mode_tokens.add(int(token))
+        if not ws:
             return False
         ws.subscribe(tokens)
         ws.set_mode(ws.MODE_FULL if full else ws.MODE_QUOTE, tokens)
