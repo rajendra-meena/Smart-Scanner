@@ -1,7 +1,8 @@
-from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
 from app.api.dependencies import get_current_session
 from app.core.config import settings
 from app.core.market_data import market_data_engine
+from app.core.market_universes import official_index_universes
 from app.core.session_store import session_store
 
 router = APIRouter(prefix="/market", tags=["market-data"])
@@ -21,6 +22,24 @@ def snapshot(current=Depends(get_current_session)):
 @router.get("/status")
 def status(current=Depends(get_current_session)):
     return market_data_engine.snapshot()
+
+
+@router.get("/universes")
+def universes(current=Depends(get_current_session)):
+    ensure_feed(current)
+    try:
+        return {
+            "constituents": {
+                "NIFTY_50": official_index_universes.get("NIFTY_50"),
+                "BANK_NIFTY": official_index_universes.get("BANK_NIFTY"),
+                "NIFTY_NEXT_50": official_index_universes.get("NIFTY_NEXT_50"),
+            },
+            "fno_symbols": market_data_engine.universe_symbols(),
+            "source": "NSE official index constituent CSV archives",
+        }
+    except Exception as exc:
+        # Do not silently substitute stale or invented constituent lists.
+        raise HTTPException(status_code=503, detail=f"Official NSE constituent data unavailable: {type(exc).__name__}") from exc
 
 
 @router.websocket("/stream")
