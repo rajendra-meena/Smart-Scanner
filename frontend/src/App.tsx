@@ -1,8 +1,7 @@
 import {useCallback,useEffect,useMemo,useRef,useState} from "react";
-import {Activity,ArrowDownRight,ArrowUpRight,BarChart3,Check,ChevronDown,CircleHelp,LogOut,RefreshCw,Search,ShieldCheck,Signal,Wifi,WifiOff} from "lucide-react";
+import {Activity,ArrowUpRight,LogOut,RefreshCw,Search,ShieldCheck} from "lucide-react";
 import {api,type MarketRow,type MarketSnapshot,type MarketUniverses,type Session} from "./lib/api";
 
-type Tab="breadth"|"gainers"|"contributors";
 type UniverseKey="NIFTY_50"|"BANK_NIFTY"|"NIFTY_NEXT_50"|"ABOVE_20"|"FNO"|"ALL";
 const UNIVERSE_OPTIONS:{value:UniverseKey;label:string}[]=[{value:"NIFTY_50",label:"NIFTY 50"},{value:"BANK_NIFTY",label:"BANK NIFTY"},{value:"NIFTY_NEXT_50",label:"NIFTY NEXT 50"},{value:"ABOVE_20",label:"Securities > Rs 20"},{value:"FNO",label:"F&O Securities"},{value:"ALL",label:"All Securities"}];
 const money=(v:number)=>new Intl.NumberFormat("en-IN",{maximumFractionDigits:2}).format(v);
@@ -12,7 +11,7 @@ const volumeText=(v:number)=>v>=10000000?`${(v/10000000).toFixed(2)} Cr`:v>=1000
 export default function App(){
  const [session,setSession]=useState<Session|null>(null);
  const [loading,setLoading]=useState(true),[busy,setBusy]=useState(false),[error,setError]=useState("");
- const [tab,setTab]=useState<Tab>("breadth"),[universe,setUniverse]=useState<UniverseKey>("NIFTY_50");
+ const [universe,setUniverse]=useState<UniverseKey>("NIFTY_50");
  const [universes,setUniverses]=useState<MarketUniverses|null>(null),[universeLoadError,setUniverseLoadError]=useState("");
  const [snapshot,setSnapshot]=useState<MarketSnapshot|null>(null),[stream,setStream]=useState("disconnected");
  const [search,setSearch]=useState(""),[showAll,setShowAll]=useState(false);
@@ -84,36 +83,21 @@ export default function App(){
  const tickAgeSeconds=snapshot?.last_tick_received_at?Math.max(0,Math.floor((Date.now()-new Date(snapshot.last_tick_received_at).getTime())/1000)):null;
  const freshTicks=tickAgeSeconds!==null&&tickAgeSeconds<30;
  const tickTime=snapshot?.last_tick_received_at?new Date(snapshot.last_tick_received_at).toLocaleTimeString("en-IN",{timeZone:"Asia/Kolkata"}):null;
- const breadth=snapshot?.breadth;
- const maxAbs=Math.max(1,breadth?.advances||0,breadth?.declines||0);
  return <div className="app-shell">
   <aside className="side"><div className="brand"><span className="brand-mark"><Activity size={20}/></span><span>smart<span className="brand-accent">scanner</span><small>MARKET INTELLIGENCE</small></span></div><div className="nav-caption">MARKET WORKSPACE</div>
-   <button className={tab==="breadth"?"side-link selected":"side-link"} onClick={()=>setTab("breadth")}><BarChart3 size={17}/>Advance / Decline</button>
-   <button className={tab==="gainers"?"side-link selected":"side-link"} onClick={()=>setTab("gainers")}><ArrowUpRight size={17}/>Gainers / Losers</button>
-   <button className={tab==="contributors"?"side-link selected":"side-link"} onClick={()=>setTab("contributors")}><Activity size={17}/>Index Contributors</button>
+   <div className="side-link selected"><ArrowUpRight size={17}/>Gainers / Losers</div>
    <div className="side-bottom"><div className="security-note"><ShieldCheck size={18}/><b>Secure by design</b><p>Market data is streamed through your authenticated backend session.</p></div><span className="version">SMART SCANNER · 0.2.0</span></div>
   </aside>
   <main className="main"><header className="topbar"><div className="crumb">Workspace <span>/</span> <b>Market overview</b></div><div className="top-actions">{session?<><span className={connected?"connection live":"connection"}><i/>{freshTicks?"LIVE TICKS":connected?"SOCKET CONNECTED":stream.toUpperCase()}</span><span className="profile-pill">{session.user.user_shortname||session.user.user_name||session.user.user_id}</span><button className="icon-button" onClick={logout} disabled={busy} title="Logout"><LogOut size={16}/></button></>:<span className="connection">NOT CONNECTED</span>}</div></header>
   <div className="page">
-   <div className="page-heading"><div><div className="eyebrow">YOUR MARKET, IN FOCUS</div><h1>Market overview<span>.</span></h1><p>Live market breadth and momentum from Zerodha Kite Connect.</p></div><div className="heading-right"><span className={connected?"live-dot":"muted-dot"}/>{freshTicks?"Receiving live ticks":connected?"Connected · waiting for ticks":"Waiting for feed"}</div></div>
+   <div className="page-heading"><div><div className="eyebrow">YOUR MARKET, IN FOCUS</div><h1>Gainers & losers<span>.</span></h1><p>Live NSE market movers from Zerodha Kite Connect.</p></div><div className="heading-right"><span className={connected?"live-dot":"muted-dot"}/>{freshTicks?"Receiving live ticks":connected?"Connected · waiting for ticks":"Waiting for feed"}</div></div>
    {error&&<div className="alert">{error}</div>}
    {!session?<section className="connect-panel"><ShieldCheck size={28}/><h2>Connect your Zerodha account</h2><p>Authenticate securely to start the live market data stream.</p><button className="primary" onClick={connect} disabled={busy||loading}>{busy?"Connecting...":"Connect to Zerodha"} <ArrowUpRight size={16}/></button></section>:<>
     <div className="status-strip"><div><span className={connected?"live-dot":"muted-dot"}/><b>{connected?"Market feed connected":"Market feed "+stream}</b><small>{snapshot?.received_instruments||0} instruments with ticks · {snapshot?.subscribed_instruments||0} subscribed</small></div><button className="subtle-button" onClick={()=>void api.marketSnapshot().then(setSnapshot).catch(e=>setError(e.message))}><RefreshCw size={14}/> Refresh snapshot</button></div>
-    <div className="tabs">{(["breadth","gainers","contributors"] as Tab[]).map(t=><button key={t} className={tab===t?"tab active":"tab"} onClick={()=>{setTab(t);setShowAll(false)}}>{t==="breadth"?"Advance Decline":t==="gainers"?"Gainer Loser":"Index Contributors"}</button>)}</div>
-    {tab==="breadth"&&<section className="panel">
-      <div className="panel-title"><div><h2>Market breadth</h2><p>NSE cash equities with live ticks received in this session</p></div><span className="live-label">LIVE UNIVERSE</span></div>
-      <div className="breadth-cards"><div className="metric positive"><small>ADVANCES</small><strong>{breadth?.advances??"—"}</strong><span>Stocks trading higher</span></div><div className="metric negative"><small>DECLINES</small><strong>{breadth?.declines??"—"}</strong><span>Stocks trading lower</span></div><div className="metric neutral"><small>UNCHANGED</small><strong>{breadth?.unchanged??"—"}</strong><span>No price change</span></div><div className="metric neutral"><small>ADV / DEC RATIO</small><strong>{breadth?.advance_decline_ratio??"—"}</strong><span>{breadth?.total??0} instruments received</span></div></div>
-      <div className="breadth-bar"><div className="bar-label"><b>Advances</b><span>{breadth?.advances??0}</span></div><div className="track"><i className="up-fill" style={{width:`${breadth?breadth.advances/Math.max(1,breadth.total)*100:0}%`}}/></div><div className="bar-label"><b>Declines</b><span>{breadth?.declines??0}</span></div><div className="track"><i className="down-fill" style={{width:`${breadth?breadth.declines/Math.max(1,breadth.total)*100:0}%`}}/></div></div>
-      <div className="section-head"><div><h3>Market movers</h3><p>Top 10 gainers and losers from received NSE equity ticks</p></div></div><div className="two-col"><MoverList title="Top gainers" rows={snapshot?.equity.gainers.slice(0,10)||[]} positive/><MoverList title="Top losers" rows={snapshot?.equity.losers.slice(0,10)||[]}/></div>
-     </section>}
-    {tab==="gainers"&&<section className="panel"><div className="panel-title"><div><h2>Gainers & losers</h2><p>Live NSE equity ranking · percentage change from previous close</p></div><span className="live-label">{rows.length} MATCHED SECURITIES</span></div>
+    {true&&<section className="panel"><div className="panel-title"><div><h2>Gainers & losers</h2><p>Live NSE equity ranking · percentage change from previous close</p></div><span className="live-label">{rows.length} MATCHED SECURITIES</span></div>
       <div className="universe-toolbar"><label className="universe-select"><span>Select Index</span><select value={universe} onChange={e=>{setUniverse(e.target.value as UniverseKey);setShowAll(false)}}>{UNIVERSE_OPTIONS.map(option=><option value={option.value} key={option.value}>{option.label}</option>)}</select></label><label className="search"><Search size={15}/><input placeholder="Search symbol" value={search} onChange={e=>setSearch(e.target.value)}/></label></div>
       {!universes&&<div className="empty">{universeLoadError?`Unable to load official NSE constituent lists: ${universeLoadError}`:"Loading official NSE constituent lists…"}</div>}
       {universes&&<><div className="mover-stack"><MoverList title="Top 20 gainers" rows={rankedGainers.slice(0,showAll?50:20)} positive/><MoverList title="Top 20 losers" rows={rankedLosers.slice(0,showAll?50:20)}/></div><button className="show-more" onClick={()=>setShowAll(v=>!v)}>{showAll?"Show top 20":"Show more"}</button></>}
-     </section>}
-    {tab==="contributors"&&<section className="panel"><div className="panel-title"><div><h2>Index contributors</h2><p>Live index quotes are available; constituent-weighted points require an official index weight feed.</p></div></div>
-      <div className="index-grid">{(snapshot?.indices||[]).map(i=><div className="index-card" key={i.instrument_token}><b>{i.symbol}</b><strong>{money(i.last_price)}</strong><span className={i.change>=0?"up":"down"}>{pct(i.change_percent)}</span></div>)}</div>
-      <div className="info-panel"><CircleHelp size={20}/><div><b>Contribution points are not being estimated</b><p>Kite Connect streams index and constituent prices, but its instrument master does not provide index constituent weights. We will add verified official index constituents and weights before calculating positive/negative contribution points. This avoids showing fabricated contribution rankings.</p></div></div>
      </section>}
    </>}
    <footer className="footer"><span>SMART SCANNER · MARKET DATA</span><span><ShieldCheck size={12}/> PRIVATE SESSION · NO ORDERS PLACED</span></footer>
