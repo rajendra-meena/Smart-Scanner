@@ -16,7 +16,7 @@ export default function OpeningBreakout(){
  const start=async()=>{setBusy(true);setError("");try{await api.start(settings?.mode||"PAPER");await refresh()}catch(e){setError(e instanceof Error?e.message:"Start failed")}finally{setBusy(false)}};
  const stop=async()=>{setBusy(true);setError("");try{await api.stop();await refresh()}catch(e){setError(e instanceof Error?e.message:"Stop failed")}finally{setBusy(false)}};
  const positions=status?.positions||[],events=status?.events||[];
- const setField=<K extends keyof BreakoutConfig>(key:K,value:BreakoutConfig[K])=>setDraft(prev=>prev?{...prev,[key]:value}:prev);
+ const setField=<K extends keyof BreakoutConfig,>(key:K,value:BreakoutConfig[K])=>setDraft(prev=>prev?{...prev,[key]:value}:prev);
  return <section className="panel opening-breakout">
   <div className="panel-title"><div><h2>Opening Price Breakout</h2><p>Live Zerodha market feed · F&O movers · ATM options</p></div><span className={status?.running?"live-label":"live-label"}>{status?.running?"RUNNING":"STOPPED"}</span></div>
   <div className="tabs"><button className={view==="dashboard"?"tab active":"tab"} onClick={()=>setView("dashboard")}>Dashboard</button><button className={view==="settings"?"tab active":"tab"} onClick={()=>setView("settings")}>Strategy settings</button></div>
