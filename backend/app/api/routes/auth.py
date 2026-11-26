@@ -1,4 +1,4 @@
-from datetime import datetime, time, timedelta
+from datetime import datetime, time, timedelta, timezone
 import logging
 from zoneinfo import ZoneInfo
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
@@ -39,7 +39,9 @@ def callback(request: Request):
         user = {k: data.get(k) for k in ("user_id","user_name","user_shortname","email","broker","exchanges","products","login_time")}
         key, _ = session_store.create(data["access_token"], user, expiry)
         response = RedirectResponse(f"{settings.frontend_origin}/?auth=success", status_code=303)
-        response.set_cookie(settings.session_cookie_name, key, expires=expiry, path="/", httponly=True,
+        # Starlette formats datetime cookie expirations as GMT; convert IST to UTC
+        # while preserving the exact same expiry instant.
+        response.set_cookie(settings.session_cookie_name, key, expires=expiry.astimezone(timezone.utc), path="/", httponly=True,
                              secure=settings.session_cookie_secure, samesite="lax")
         return response
     except Exception as exc:
