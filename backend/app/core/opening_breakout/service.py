@@ -177,10 +177,20 @@ class OpeningBreakoutService:
             self._cancel_pending_entry(token, pending, now, reason)
 
     def _exit_open_paper_positions(self, now, reason):
+        now_monotonic = monotonic()
         for position in list(self.positions.values()):
             if position["status"] != "OPEN":
                 continue
             token = int(position["option_token"])
+            last_quote = self._last_option_tick_monotonic.get(token)
+            if last_quote is None or now_monotonic - last_quote > 5:
+                self._record_unpriced_feed_exit(
+                    position,
+                    now,
+                    exit_reason=f"{reason}_UNPRICED",
+                )
+                continue
+
             tick = self._last_option_ticks.get(token, {})
             bids = (tick.get("depth") or {}).get("buy") or []
             price = float(
@@ -191,7 +201,9 @@ class OpeningBreakoutService:
             )
             self._close_paper(position, price, reason, now)
 
-    def _record_unpriced_feed_exit(self, position, now):
+    def _record_unpriced_feed_exit(
+        self, position, now, exit_reason="FEED_GUARD_EXIT"
+    ):
         """Close the paper lifecycle without inventing an exit price."""
         if position["status"] != "OPEN":
             return
@@ -199,7 +211,7 @@ class OpeningBreakoutService:
         position.update(
             status="CLOSED_UNPRICED",
             exit_price=None,
-            exit_reason="FEED_GUARD_EXIT",
+            exit_reason=exit_reason,
             closed_at=now.isoformat(),
             pnl=None,
         )
@@ -229,7 +241,7 @@ class OpeningBreakoutService:
                 "time": now.isoformat(),
                 "event": "PAPER_EXIT_PERSIST_DEFERRED",
                 "symbol": position["symbol"],
-                "reason": "FEED_GUARD_EXIT",
+                "reason": exit_reason,
                 "message": "Trade queued in the durable recovery journal",
             })
         if persistence_error is not None:
@@ -603,37 +615,20 @@ class OpeningBreakoutService:
 
     def _square_off_paper(self, rows, now):
         self._cancel_pending_entries(now, "TIME_EXIT_09_30")
-        latest = {
-            int(row.get("instrument_token") or 0): float(
-                row.get("last_price") or 0
-            )
-            for row in rows
-        }
-        latest.update({
-            token: float(tick.get("last_price") or 0)
-            for token, tick in self._last_option_ticks.items()
-        })
-
-        for position in list(self.positions.values()):
-            if position["status"] != "OPEN":
+        # Use an option tick delivered in this 09:30 batch before checking
+        # quote age; an equity-only batch must not refresh an option quote.
+        for row in rows:
+            if row.get("instrument_type") not in ("CE", "PE"):
                 continue
+            token = int(row.get("instrument_token") or 0)
+            if token not in self._option_token_symbols:
+                continue
+            if float(row.get("last_price") or 0) <= 0:
+                continue
+            self._last_option_ticks[token] = row
+            self._last_option_tick_monotonic[token] = monotonic()
 
-            token = int(position["option_token"])
-            tick = self._last_option_ticks.get(token, {})
-            bids = (tick.get("depth") or {}).get("buy") or []
-            price = float(
-                (bids[0].get("price") if bids else 0)
-                or position.get("bid")
-                or latest.get(token)
-                or position.get("ltp")
-                or position["entry_price"]
-            )
-            self._close_paper(
-                position,
-                price,
-                "TIME_EXIT_09_30",
-                now,
-            )
+        self._exit_open_paper_positions(now, "TIME_EXIT_09_30")
 
     def stop(self):
         with self.lock:
