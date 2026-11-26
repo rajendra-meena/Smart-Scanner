@@ -27,6 +27,8 @@ jobs:
         working-directory: backend
         env:
           PYTHONPATH: .
+          # Test-only Fernet key; never use this value outside CI.
+          SESSION_ENCRYPTION_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
         run: python -m pytest -q
 
   frontend:
