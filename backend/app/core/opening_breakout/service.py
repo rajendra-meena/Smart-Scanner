@@ -58,13 +58,14 @@ class OpeningBreakoutService:
         if not spot:return None
         return min(chain,key=lambda r:(abs(float(r["strike"])-spot),float(r["strike"])))
 
-    def _is_liquid(self,row):
+    def _liquidity_prices(self,row):
         depth=row.get("depth") or {};buy=depth.get("buy") or [];sell=depth.get("sell") or []
         bid=next((float(x.get("price") or 0) for x in buy if x.get("price")),0)
         ask=next((float(x.get("price") or 0) for x in sell if x.get("price")),0)
-        if bid<=0 or ask<=0 or ask<bid:return False
+        if bid<=0 or ask<=0 or ask<bid:return None
         spread=(ask-bid)/((ask+bid)/2)*100
-        return spread<=self.config.max_spread_percent
+        if spread>self.config.max_spread_percent:return None
+        return bid,ask
 
     def on_market_tick(self,rows):
         now=datetime.now(IST)
@@ -112,7 +113,8 @@ class OpeningBreakoutService:
             for pos in list(self.positions.values()):
                 if pos["status"]=="OPEN":
                     tick=self._last_option_ticks.get(int(pos["option_token"]),{})
-                    price=float(tick.get("last_price") or pos.get("ltp") or pos["entry_price"])
+                    depth=tick.get("depth") or {}; bids=depth.get("buy") or []
+                    price=float((bids[0].get("price") if bids else 0) or pos.get("bid") or tick.get("last_price") or pos["entry_price"])
                     self._close_paper(pos,price,"TIME_EXIT_09_30",now)
             self.running=False
             self.events.append({"time":now.isoformat(),"event":"STRATEGY_TIME_EXIT"})
@@ -125,9 +127,11 @@ class OpeningBreakoutService:
         ltp=float(row.get("last_price") or 0)
         if ltp<=0:return
         if pending:
-            if not self._is_liquid(row):return
-            pending.update(status="OPEN",entry_price=ltp,stop_price=round(ltp-self.config.stop_loss_points,2),
-                           ltp=ltp,quantity=int(pending["lot_size"]),opened_at=now.isoformat())
+            prices=self._liquidity_prices(row)
+            if not prices:return
+            bid,ask=prices
+            pending.update(status="OPEN",entry_price=ask,stop_price=round(ask-self.config.stop_loss_points,2),
+                           ltp=ltp,bid=bid,ask=ask,quantity=int(pending["lot_size"]),opened_at=now.isoformat())
             self.positions[pending["id"]]=pending
             self._pending_contracts.pop(int(row["instrument_token"]),None)
             self.events.append({"time":now.isoformat(),"event":"PAPER_ENTRY","symbol":pending["symbol"],"option_symbol":symbol,"price":ltp})
@@ -135,7 +139,12 @@ class OpeningBreakoutService:
         for pos in self.positions.values():
             if pos["option_token"]==row["instrument_token"] and pos["status"]=="OPEN":
                 pos["ltp"]=ltp
-                if ltp<=pos["stop_price"]:self._close_paper(pos,ltp,"STOP_LOSS",now)
+                prices=self._liquidity_prices(row)
+                if prices:
+                    bid,ask=prices;pos["bid"]=bid;pos["ask"]=ask
+                if ltp<=pos["stop_price"]:
+                    exit_price=(prices[0] if prices else ltp)
+                    self._close_paper(pos,exit_price,"STOP_LOSS",now)
 
     def _close_paper(self,pos,price,reason,now):
         pos.update(status="CLOSED",exit_price=price,exit_reason=reason,closed_at=now.isoformat())
@@ -148,7 +157,9 @@ class OpeningBreakoutService:
         latest.update({token:float(tick.get("last_price") or 0) for token,tick in self._last_option_ticks.items()})
         for pos in self.positions.values():
             if pos["status"]=="OPEN":
-                price=latest.get(pos["option_token"]) or pos.get("ltp") or pos["entry_price"]
+                tick=self._last_option_ticks.get(int(pos["option_token"]),{})
+                depth=tick.get("depth") or {}; bids=depth.get("buy") or []
+                price=float((bids[0].get("price") if bids else 0) or pos.get("bid") or latest.get(pos["option_token"]) or pos.get("ltp") or pos["entry_price"])
                 self._close_paper(pos,price,"TIME_EXIT_09_30",now)
 
     def stop(self):
