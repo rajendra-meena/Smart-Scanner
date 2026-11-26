@@ -159,6 +159,7 @@ class MarketDataEngine:
             self._access_token = None
             self._ticks.clear()
             self._subscribed.clear()
+            self._fno_symbols.clear()
             self._last_tick_received_at = None
             self._status, self._error = "disconnected", None
         if ticker:
