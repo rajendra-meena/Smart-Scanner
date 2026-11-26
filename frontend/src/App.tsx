@@ -64,7 +64,8 @@ export default function App(){
  const logout=async()=>{setBusy(true);setError("");socket.current?.close();try{await api.logout();setSession(null);setSnapshot(null);setStream("disconnected")}catch(e){setError(e instanceof Error?e.message:"Logout failed.")}finally{setBusy(false)}};
  const rows=useMemo(()=>{
   if(!snapshot)return[];
-  const equity=snapshot.all_equity;
+  // Hide securities with incomplete OHLC ticks; zero OPEN, HIGH, or LOW is not displayable.
+  const equity=snapshot.all_equity.filter(row=>row.open>0&&row.high>0&&row.low>0);
   if(universe==="ABOVE_20")return equity.filter(row=>row.last_price>20);
   if(universe==="FNO"){
    const symbols=new Set(universes?.fno_symbols||[]);
