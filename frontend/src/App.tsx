@@ -12,7 +12,7 @@ export default function App(){
  const [session,setSession]=useState<Session|null>(null);
  const [loading,setLoading]=useState(true),[busy,setBusy]=useState(false),[error,setError]=useState("");
  const [tab,setTab]=useState<Tab>("breadth"),[universe,setUniverse]=useState<UniverseKey>("NIFTY_50");
- const [universes,setUniverses]=useState<MarketUniverses|null>(null);
+ const [universes,setUniverses]=useState<MarketUniverses|null>(null),[universeLoadError,setUniverseLoadError]=useState("");
  const [snapshot,setSnapshot]=useState<MarketSnapshot|null>(null),[stream,setStream]=useState("disconnected");
  const [search,setSearch]=useState(""),[showAll,setShowAll]=useState(false);
  const socket=useRef<WebSocket|null>(null);
@@ -26,7 +26,7 @@ export default function App(){
   const start=async()=>{
    try{
     const initial=await api.marketSnapshot();if(!active)return;setSnapshot(initial);
-    const officialUniverses=await api.marketUniverses();if(!active)return;setUniverses(officialUniverses);
+    try{const officialUniverses=await api.marketUniverses();if(!active)return;setUniverses(officialUniverses);setUniverseLoadError("");}catch(e){if(!active)return;setUniverseLoadError(e instanceof Error?e.message:"Official NSE constituent lists unavailable.");}
     const protocol=location.protocol==="https:"?"wss:":"ws:";
     const ws=new WebSocket(`${protocol}//${location.host}/api/market/stream`);
     socket.current=ws;setStream("connecting");
@@ -107,7 +107,7 @@ export default function App(){
      </section>}
     {tab==="gainers"&&<section className="panel"><div className="panel-title"><div><h2>Gainers & losers</h2><p>Live NSE equity ranking · percentage change from previous close</p></div><span className="live-label">{rows.length} MATCHED SECURITIES</span></div>
       <div className="universe-toolbar"><label className="universe-select"><span>Select Index</span><select value={universe} onChange={e=>{setUniverse(e.target.value as UniverseKey);setShowAll(false)}}>{UNIVERSE_OPTIONS.map(option=><option value={option.value} key={option.value}>{option.label}</option>)}</select></label><label className="search"><Search size={15}/><input placeholder="Search symbol" value={search} onChange={e=>setSearch(e.target.value)}/></label></div>
-      {!universes&&<div className="empty">Loading official NSE constituent lists…</div>}
+      {!universes&&<div className="empty">{universeLoadError?`Unable to load official NSE constituent lists: ${universeLoadError}`:"Loading official NSE constituent lists…"}</div>}
       {universes&&<><div className="two-col"><MoverList title="Top 20 gainers" rows={rankedGainers.slice(0,showAll?50:20)} positive/><MoverList title="Top 20 losers" rows={rankedLosers.slice(0,showAll?50:20)}/></div><button className="show-more" onClick={()=>setShowAll(v=>!v)}>{showAll?"Show top 20":"Show more"}</button></>}
      </section>}
     {tab==="contributors"&&<section className="panel"><div className="panel-title"><div><h2>Index contributors</h2><p>Live index quotes are available; constituent-weighted points require an official index weight feed.</p></div></div>
