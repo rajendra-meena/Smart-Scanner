@@ -15,7 +15,7 @@ class OpeningBreakoutService:
         self.lock=RLock();self.config=BreakoutConfig();self.engine=OpeningBreakoutEngine(self.config)
         self.store=OpeningBreakoutStore();self.running=False;self.mode=None;self.events=[]
         self.positions={};self.started_at=None;self._traded_symbols=set();self._day=None
-        self._instrument_rows=[];self._option_token_symbols={}
+        self._instrument_rows=[];self._option_token_symbols={};self._pending_contracts={}
 
     def configure(self,values):
         with self.lock:
@@ -39,7 +39,7 @@ class OpeningBreakoutService:
             self._load_universe(snap)
             self.positions={};self._traded_symbols=set();self.mode=mode;self.running=True
             self.started_at=datetime.now(IST).isoformat();self._day=datetime.now(IST).date().isoformat()
-            self._instrument_rows=market_data_engine.option_instruments()
+            self._instrument_rows=self.market_data.option_instruments()
             self.events=[{"time":self.started_at,"event":"PAPER_STARTED","detail":f"{len(self.engine.stocks)} F&O stocks loaded"}]
             return self.snapshot()
 
@@ -80,6 +80,8 @@ class OpeningBreakoutService:
                 signal=self.engine.on_tick(row,now)
                 if not signal:continue
                 self._traded_symbols.add(symbol);self.engine.mark_traded(symbol)
+                if len([p for p in self.positions.values() if p["status"] in ("OPEN","WAITING_QUOTE")]) >= self.config.max_positions:
+                    self.events.append({"time":now.isoformat(),"event":"SIGNAL_SKIPPED","symbol":symbol,"reason":"Maximum open positions reached"});continue
                 contract=self._select_atm(symbol,signal)
                 if not contract:
                     self.events.append({"time":now.isoformat(),"event":"SIGNAL_SKIPPED","symbol":symbol,"reason":"No valid nearest ATM option in current instrument master"});continue
@@ -92,13 +94,14 @@ class OpeningBreakoutService:
     def _handle_option_tick(self,row,now):
         symbol=self._option_token_symbols.get(int(row.get("instrument_token") or 0))
         if not symbol:return
-        pending=next((p for p in self.positions.values() if p["option_token"]==row["instrument_token"] and p["status"]=="WAITING_QUOTE"),None)
+        pending=self._pending_contracts.get(int(row["instrument_token"]))
         ltp=float(row.get("last_price") or 0)
         if ltp<=0:return
         if pending:
             if not self._is_liquid(row):return
             pending.update(status="OPEN",entry_price=ltp,stop_price=round(ltp-self.config.stop_loss_points,2),
                            ltp=ltp,quantity=int(pending["lot_size"]),opened_at=now.isoformat())
+            self.positions[pending["id"]]=pending
             self.events.append({"time":now.isoformat(),"event":"PAPER_ENTRY","symbol":pending["symbol"],"option_symbol":symbol,"price":ltp})
             return
         for pos in self.positions.values():
@@ -129,7 +132,7 @@ class OpeningBreakoutService:
         return {"running":self.running,"mode":self.mode,"market_data_ready":snap["status"]=="connected" and bool(snap["last_tick_received_at"]),
                 "watchlist_count":len(self.engine.stocks),"open_positions":sum(p["status"] in ("OPEN","WAITING_QUOTE") for p in self.positions.values()),
                 "trades_count":len(self.store.trades(datetime.now(IST).date().isoformat())),"watchlist":self.engine.snapshot(),
-                "positions":list(self.positions.values()),"events":self.events[-100:],"market_status":snap["status"],
+                "positions":list(self.positions.values()),"watchlist":self.engine.snapshot(),"events":self.events[-100:],"market_status":snap["status"],
                 "started_at":self.started_at,"live_ready":False,"live_block_reason":"Protective stop order lifecycle, partial-fill recovery and broker reconciliation require verification."}
 
     def trades(self):return self.store.trades()
