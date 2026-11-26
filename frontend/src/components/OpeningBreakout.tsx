@@ -32,6 +32,7 @@ export default function OpeningBreakout(){
      <label>Stop loss (premium points)<input type="number" min="0.05" max="100" step="0.05" value={draft.stop_loss_points} onChange={e=>setField("stop_loss_points",Number(e.target.value))}/></label>
      <label>Maximum open positions<input type="number" min="1" max="6" value={draft.max_positions} onChange={e=>setField("max_positions",Number(e.target.value))}/></label>
      <label>Maximum bid/ask spread (%)<input type="number" min="0.01" max="10" step="0.05" value={draft.max_spread_percent} onChange={e=>setField("max_spread_percent",Number(e.target.value))}/></label>
+     <label>Strategy exit time (IST)<input type="time" step="1" value={draft.exit_time} onChange={e=>setField("exit_time",e.target.value)}/></label>
     </div><p className="settings-note">Exit time is currently fixed at 09:30 IST in the strategy engine, so it is not presented as an editable setting. Target is not configured by this strategy.</p>
     <button className="primary" disabled={busy} onClick={()=>void save()}>{busy?"Saving…":"Save settings"}</button>
    </>}
