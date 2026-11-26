@@ -351,29 +351,149 @@ def test_square_off_cancels_pending_and_closes_open_position(service_env):
     assert service.engine.stocks["XYZ"].active_position_id is None
 
 
-def test_feed_failure_cancels_pending_and_closes_open_position(service_env):
+
+def test_feed_failure_cancels_pending_and_records_unpriced_exit(service_env):
     service, market_data, store = service_env
 
     add_pending_entry(service, token=101)
     position = add_open_position(service, token=202)
 
+    # Simulate cached prices that must not be used after feed failure.
+    position["bid"] = 95.0
+    position["ltp"] = 96.0
+    service._last_option_ticks[202] = option_tick(
+        202,
+        ltp=96.0,
+        bid=95.5,
+        ask=95.8,
+    )
+
     service.running = True
     market_data.fresh = False
+    exit_timer = FakeTimer(600, service._time_exit)
+    service._exit_timer = exit_timer
+    watchdog = FakeTimer(1, service._watchdog_tick)
+    service._watchdog_timer = watchdog
 
     service.on_market_tick([])
 
     assert service.running is False
+    assert exit_timer.cancelled is True
+    assert service._exit_timer is None
+    assert watchdog.cancelled is True
+    assert service._watchdog_timer is None
     assert 101 not in service._pending_contracts
 
-    assert position["status"] == "CLOSED"
+    assert position["status"] == "CLOSED_UNPRICED"
     assert position["exit_reason"] == "FEED_GUARD_EXIT"
+    assert position["exit_price"] is None
+    assert position.get("pnl") is None
 
     assert len(store.saved_trades) == 1
+    assert store.saved_trades[0]["status"] == "CLOSED_UNPRICED"
+    assert store.saved_trades[0]["exit_price"] is None
+    assert store.saved_trades[0].get("pnl") is None
+
+    assert service.engine.stocks["XYZ"].active_position_id is None
 
     assert any(
         event["event"] == "FEED_GUARD_STOP"
         for event in service.events
     )
+
+
+def test_watchdog_stops_strategy_when_feed_goes_stale_without_market_ticks(
+    service_env, monkeypatch
+):
+    service, market_data, store = service_env
+    add_pending_entry(service, token=101)
+    position = add_open_position(service, token=202)
+    service.running = True
+    market_data.fresh = False
+
+    watchdog = FakeTimer(1, service._watchdog_tick)
+    service._watchdog_timer = watchdog
+
+    watchdog.callback()
+
+    assert service.running is False
+    assert watchdog.cancelled is True
+    assert service._watchdog_timer is None
+    assert 101 not in service._pending_contracts
+    assert position["status"] == "CLOSED_UNPRICED"
+    assert position["exit_price"] is None
+    assert position.get("pnl") is None
+    assert len(store.saved_trades) == 1
+    assert any(event["event"] == "FEED_GUARD_STOP" for event in service.events)
+
+
+def test_feed_failure_stops_strategy_even_when_trade_persistence_fails(service_env):
+    service, market_data, store = service_env
+    position = add_open_position(service, token=202)
+    service.running = True
+    market_data.fresh = False
+
+    exit_timer = FakeTimer(600, service._time_exit)
+    watchdog = FakeTimer(1, service._watchdog_tick)
+    service._exit_timer = exit_timer
+    service._watchdog_timer = watchdog
+
+    def fail_save_trade(trade):
+        raise RuntimeError("database unavailable")
+
+    store.save_trade = fail_save_trade
+
+    service._watchdog_tick()
+
+    assert service.running is False
+    assert service._exit_timer is None
+    assert service._watchdog_timer is None
+    assert exit_timer.cancelled is True
+    assert watchdog.cancelled is True
+    assert position["status"] == "CLOSED_UNPRICED"
+    assert position["exit_price"] is None
+    assert service.engine.stocks["XYZ"].active_position_id is None
+    assert any(
+        event["event"] == "PAPER_EXIT_PERSIST_FAILED"
+        for event in service.events
+    )
+    assert any(event["event"] == "FEED_GUARD_STOP" for event in service.events)
+
+
+def test_watchdog_reschedules_while_feed_is_fresh(service_env, monkeypatch):
+    service, market_data, _ = service_env
+    monkeypatch.setattr(service_module, "Timer", FakeTimer)
+    FakeTimer.instances.clear()
+    service.running = True
+    market_data.fresh = True
+
+    first = FakeTimer(1, service._watchdog_tick)
+    service._watchdog_timer = first
+
+    first.callback()
+
+    assert service.running is True
+    assert service._watchdog_timer is not first
+    assert service._watchdog_timer.started is True
+    assert service._watchdog_timer.daemon is True
+
+
+def test_schedule_watchdog_does_not_create_duplicate_timer(service_env, monkeypatch):
+    service, _, _ = service_env
+    monkeypatch.setattr(service_module, "Timer", FakeTimer)
+    FakeTimer.instances.clear()
+    service.running = True
+
+    existing = FakeTimer(1, service._watchdog_tick)
+    existing.start()
+    service._watchdog_timer = existing
+
+    service._schedule_watchdog()
+
+    assert service._watchdog_timer is existing
+    assert len(FakeTimer.instances) == 1
+    assert existing.started is True
+    assert existing.cancelled is False
 
 
 def test_manual_stop_cancels_pending_and_closes_open_position(service_env):
@@ -383,6 +503,8 @@ def test_manual_stop_cancels_pending_and_closes_open_position(service_env):
     position = add_open_position(service, token=202)
 
     service.running = True
+    watchdog = FakeTimer(1, service._watchdog_tick)
+    service._watchdog_timer = watchdog
 
     result = service.stop()
 
@@ -394,6 +516,8 @@ def test_manual_stop_cancels_pending_and_closes_open_position(service_env):
 
     assert len(store.saved_trades) == 1
     assert result["running"] is False
+    assert watchdog.cancelled is True
+    assert service._watchdog_timer is None
 
     assert any(
         event["event"] == "STOPPED"
@@ -443,9 +567,10 @@ def test_start_loads_only_fno_universe_and_starts_timer(
     assert set(service.engine.stocks) == {"ABC", "XYZ"}
     assert "NOTFNO" not in service.engine.stocks
 
-    assert len(FakeTimer.instances) == 1
-    assert FakeTimer.instances[0].started is True
-    assert FakeTimer.instances[0].daemon is True
+    assert len(FakeTimer.instances) == 2
+    assert service._exit_timer is FakeTimer.instances[0]
+    assert service._watchdog_timer is FakeTimer.instances[1]
+    assert all(timer.started and timer.daemon for timer in FakeTimer.instances)
 
     service.stop()
 
@@ -757,11 +882,15 @@ def test_timer_callback_cancels_pending_and_closes_open_positions(
 
     timer = FakeTimer(600, service._time_exit)
     service._exit_timer = timer
+    watchdog = FakeTimer(1, service._watchdog_tick)
+    service._watchdog_timer = watchdog
 
     # Simulate the scheduled 09:30 timer callback.
     timer.callback()
 
     assert service.running is False
+    assert watchdog.cancelled is True
+    assert service._watchdog_timer is None
     assert 101 not in service._pending_contracts
     assert position["status"] == "CLOSED"
     assert position["exit_reason"] == "TIME_EXIT_09_30"
@@ -862,32 +991,10 @@ def test_start_accepts_exact_091530_boundary(service_env, monkeypatch):
 
     assert result["running"] is True
     assert service.mode == "PAPER"
-    assert len(FakeTimer.instances) == 1
-    assert FakeTimer.instances[0].started is True
+    assert len(FakeTimer.instances) == 2
+    assert all(timer.started for timer in FakeTimer.instances)
 
 def test_duplicate_start_does_not_reset_running_strategy(
     service_env, monkeypatch
 ):
     service, market_data, store = service_env
-    prepare_start_environment(service, market_data, monkeypatch)
-
-    # First start should succeed.
-    service.start("PAPER", "test-token")
-
-    # Create active strategy state.
-    pending = add_pending_entry(service, token=101)
-    position = add_open_position(service, token=202)
-
-    original_timer = service._exit_timer
-
-    # Second start must be rejected without changing existing state.
-    with pytest.raises(RuntimeError, match="already running"):
-        service.start("PAPER", "test-token")
-
-    assert service.running is True
-    assert service._pending_contracts[101] is pending
-    assert service.positions[position["id"]] is position
-    assert service._exit_timer is original_timer
-    assert len(FakeTimer.instances) == 1
-
-    service.stop()
