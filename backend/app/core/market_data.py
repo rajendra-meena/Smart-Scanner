@@ -40,7 +40,7 @@ class MarketDataEngine:
 
     def start(self, api_key: str, access_token: str):
         with self._lock:
-            if self._ticker and self._access_token == access_token and self._status in ("connecting", "connected"):
+            if self._access_token == access_token and self._status in ("loading_instruments", "connecting", "connected"):
                 return
             if self._ticker:
                 try:
