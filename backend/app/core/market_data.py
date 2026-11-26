@@ -188,7 +188,8 @@ class MarketDataEngine:
         with self._lock:
             ws = self._ticker
             for token in tokens:
-                self._subscribed.append(token) if token not in self._subscribed else None
+                if token not in self._subscribed:
+                    self._subscribed.append(token)
             new_tokens = [token for token in tokens if token not in self._instruments]
         if not ws or not tokens:
             return False
