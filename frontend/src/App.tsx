@@ -37,7 +37,7 @@ export default function App(){
       if(message.type==="ticks")setSnapshot(prev=>{
        if(!prev)return prev;
        const map=new Map<number,MarketRow>();
-       [...prev.equity.gainers,...prev.equity.losers,...prev.futures.gainers,...prev.futures.losers,...prev.indices].forEach(row=>map.set(row.instrument_token,row));
+       [...prev.all_equity,...prev.all_futures,...prev.indices].forEach(row=>map.set(row.instrument_token,row));
        message.data.forEach((row:MarketRow)=>map.set(row.instrument_token,row));
        const rows=[...map.values()];
        const equity=rows.filter(r=>r.instrument_type==="EQ");
@@ -45,7 +45,7 @@ export default function App(){
        const indices=rows.filter(r=>r.instrument_type==="INDICES"||r.exchange==="NSE"&&r.symbol?.startsWith("NIFTY"));
        const ranked=(items:MarketRow[],positive:boolean)=>items.filter(r=>r.close>0).sort((a,b)=>positive?b.change_percent-a.change_percent:a.change_percent-b.change_percent);
        const advances=equity.filter(r=>r.change>0).length,declines=equity.filter(r=>r.change<0).length,unchanged=equity.filter(r=>r.change===0).length;
-       return {...prev,status:"connected",received_instruments:rows.length,breadth:{advances,declines,unchanged,total:equity.length,advance_decline_ratio:declines?Number((advances/declines).toFixed(2)):null},equity:{gainers:ranked(equity,true).slice(0,50),losers:ranked(equity,false).slice(0,50)},futures:{gainers:ranked(futures,true).slice(0,50),losers:ranked(futures,false).slice(0,50)},indices};
+       return {...prev,status:"connected",received_instruments:rows.length,breadth:message.breadth||{advances,declines,unchanged,total:equity.length,advance_decline_ratio:declines?Number((advances/declines).toFixed(2)):null},all_equity:equity,all_futures:futures,equity:{gainers:ranked(equity,true).slice(0,50),losers:ranked(equity,false).slice(0,50)},futures:{gainers:ranked(futures,true).slice(0,50),losers:ranked(futures,false).slice(0,50)},indices};
       });
      }catch{setError("Market stream message could not be processed.")}
     };
