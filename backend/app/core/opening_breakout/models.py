@@ -11,6 +11,7 @@ class BreakoutConfig:
     enabled: bool = False
     start_time: str = "09:15:00"
     end_time: str = "09:30:00"
+    exit_time: str = "09:30:00"
     initial_wait_seconds: int = 30
     gainers_count: int = 3
     losers_count: int = 3
