@@ -85,10 +85,6 @@ export default function App(){
  const freshTicks=tickAgeSeconds!==null&&tickAgeSeconds<30;
  const tickTime=snapshot?.last_tick_received_at?new Date(snapshot.last_tick_received_at).toLocaleTimeString("en-IN",{timeZone:"Asia/Kolkata"}):null;
  return <div className="app-shell">
-  <aside className="side"><div className="brand"><span className="brand-mark"><Activity size={20}/></span><span>smart<span className="brand-accent">scanner</span><small>MARKET INTELLIGENCE</small></span></div><div className="nav-caption">MARKET WORKSPACE</div>
-   <div className="side-link selected"><ArrowUpRight size={17}/>Gainers / Losers</div>
-   <div className="side-bottom"><div className="security-note"><ShieldCheck size={18}/><b>Secure by design</b><p>Market data is streamed through your authenticated backend session.</p></div><span className="version">SMART SCANNER · 0.2.0</span></div>
-  </aside>
   <main className="main"><header className="topbar"><div className="crumb">Workspace <span>/</span> <b>Gainers / Losers</b></div><div className="top-actions">{session?<><span className={connected?"connection live":"connection"}><i/>{freshTicks?"LIVE TICKS":connected?"SOCKET CONNECTED":stream.toUpperCase()}</span><span className="profile-pill">{session.user.user_shortname||session.user.user_name||session.user.user_id}</span><button className="icon-button" onClick={logout} disabled={busy} title="Logout"><LogOut size={16}/></button></>:<span className="connection">NOT CONNECTED</span>}</div></header>
   <div className="page">
    <div className="page-heading"><div><div className="eyebrow">YOUR MARKET, IN FOCUS</div><h1>Gainers & losers<span>.</span></h1><p>Live NSE market movers from Zerodha Kite Connect.</p></div><div className="heading-right"><span className={connected?"live-dot":"muted-dot"}/>{freshTicks?"Receiving live ticks":connected?"Connected · waiting for ticks":"Waiting for feed"}</div></div>
@@ -102,8 +98,7 @@ export default function App(){
      </section>
    </>}
    <footer className="footer"><span>SMART SCANNER · MARKET DATA</span><span><ShieldCheck size={12}/> PRIVATE SESSION · NO ORDERS PLACED</span></footer>
-  </div></main>
- </div>;
+  </div></main>;
 }
 
 function MoverList({title,rows,positive=false}:{title:string;rows:MarketRow[];positive?:boolean}){
