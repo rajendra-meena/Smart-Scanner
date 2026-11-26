@@ -20,6 +20,13 @@ class OpeningBreakoutService:
         self.config = BreakoutConfig()
         self.engine = OpeningBreakoutEngine(self.config)
         self.store = OpeningBreakoutStore()
+        self.selected_mode = "PAPER"
+        persisted = self.store.load_settings()
+        for key, value in persisted.items():
+            if key == "selected_mode" and value in ("PAPER", "LIVE"):
+                self.selected_mode = value
+            elif hasattr(self.config, key):
+                setattr(self.config, key, value)
         self.running = False
         self.mode = None
         self.events = []
@@ -41,7 +48,33 @@ class OpeningBreakoutService:
                 if hasattr(self.config, key):
                     setattr(self.config, key, value)
             self.engine.config = self.config
-            return self.snapshot()
+            self.store.save_settings({**values, "selected_mode": self.selected_mode})
+            return self.settings()
+
+    def settings(self):
+        with self.lock:
+            return {
+                "mode": self.selected_mode,
+                "live_ready": False,
+                "live_block_reason": "Live broker order placement, protective SL, partial-fill handling and broker reconciliation are not implemented and verified.",
+                "config": {
+                    "gainers_count": self.config.gainers_count,
+                    "losers_count": self.config.losers_count,
+                    "stop_loss_points": self.config.stop_loss_points,
+                    "max_positions": self.config.max_positions,
+                    "max_spread_percent": self.config.max_spread_percent,
+                },
+            }
+
+    def set_mode(self, mode):
+        if mode not in ("PAPER", "LIVE"):
+            raise ValueError("Mode must be PAPER or LIVE.")
+        with self.lock:
+            if self.running:
+                raise RuntimeError("Stop the strategy before changing execution mode.")
+            self.selected_mode = mode
+            self.store.save_settings({"selected_mode": mode})
+            return self.settings()
 
     def _load_universe(self, snapshot):
         fno = set(self.market_data.universe_symbols())
