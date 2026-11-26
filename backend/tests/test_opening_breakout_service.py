@@ -687,6 +687,7 @@ def test_subscription_failure_releases_pending_reservation(
 
     assert 501 not in service._pending_contracts
     assert 501 not in service._option_token_symbols
+    assert 501 not in service._pending_quote_started
 
     assert any(
         event["event"] == "SUBSCRIPTION_FAILED"
