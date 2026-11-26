@@ -1,7 +1,7 @@
 """Strategy orchestration. Paper engine is tick driven; Live stays fail-closed."""
 from datetime import datetime,time
 from zoneinfo import ZoneInfo
-from threading import RLock
+from threading import RLock, Timer
 from uuid import uuid4
 from .engine import OpeningBreakoutEngine
 from .models import BreakoutConfig
@@ -15,7 +15,7 @@ class OpeningBreakoutService:
         self.lock=RLock();self.config=BreakoutConfig();self.engine=OpeningBreakoutEngine(self.config)
         self.store=OpeningBreakoutStore();self.running=False;self.mode=None;self.events=[]
         self.positions={};self.started_at=None;self._traded_symbols=set();self._day=None
-        self._instrument_rows=[];self._option_token_symbols={};self._pending_contracts={};self._last_option_ticks={}
+        self._instrument_rows=[];self._option_token_symbols={};self._pending_contracts={};self._last_option_ticks={};self._exit_timer=None
 
     def configure(self,values):
         with self.lock:
@@ -39,6 +39,9 @@ class OpeningBreakoutService:
             self._load_universe(snap)
             self.positions={};self._pending_contracts={};self._last_option_ticks={};self._option_token_symbols={};self._traded_symbols=set();self.mode=mode;self.running=True
             self.started_at=datetime.now(IST).isoformat();self._day=datetime.now(IST).date().isoformat()
+            seconds=max(0,(datetime.combine(datetime.now(IST).date(),time(9,30),tzinfo=IST)-datetime.now(IST)).total_seconds())
+            self._exit_timer=Timer(seconds,self._time_exit)
+            self._exit_timer.daemon=True;self._exit_timer.start()
             self._instrument_rows=self.market_data.option_instruments()
             self.events=[{"time":self.started_at,"event":"PAPER_STARTED","detail":f"{len(self.engine.stocks)} F&O stocks loaded"}]
             return self.snapshot()
@@ -93,6 +96,18 @@ class OpeningBreakoutService:
                                     "option_symbol":contract["tradingsymbol"],"status":"WAITING_OPTION_TICK",
                                     "detail":"ATM option subscribed; waiting for fresh full-depth option tick."})
 
+    def _time_exit(self):
+        now=datetime.now(IST)
+        with self.lock:
+            if not self.running:return
+            for pos in list(self.positions.values()):
+                if pos["status"]=="OPEN":
+                    tick=self._last_option_ticks.get(int(pos["option_token"]),{})
+                    price=float(tick.get("last_price") or pos.get("ltp") or pos["entry_price"])
+                    self._close_paper(pos,price,"TIME_EXIT_09_30",now)
+            self.running=False
+            self.events.append({"time":now.isoformat(),"event":"STRATEGY_TIME_EXIT"})
+
     def _handle_option_tick(self,row,now):
         symbol=self._option_token_symbols.get(int(row.get("instrument_token") or 0))
         if not symbol:return
@@ -129,7 +144,10 @@ class OpeningBreakoutService:
 
     def stop(self):
         with self.lock:
-            self.running=False;self.events.append({"time":datetime.now(IST).isoformat(),"event":"STOPPED"})
+            self.running=False
+            if self._exit_timer:
+                self._exit_timer.cancel();self._exit_timer=None
+            self.events.append({"time":datetime.now(IST).isoformat(),"event":"STOPPED"})
             return self.snapshot()
 
     def snapshot(self):
