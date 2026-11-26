@@ -1,16 +1,18 @@
 import {useCallback,useEffect,useMemo,useRef,useState} from "react";
 import {Activity,ArrowDownRight,ArrowUpRight,BarChart3,Check,ChevronDown,CircleHelp,LogOut,RefreshCw,Search,ShieldCheck,Signal,Wifi,WifiOff} from "lucide-react";
-import {api,type MarketRow,type MarketSnapshot,type Session} from "./lib/api";
+import {api,type MarketRow,type MarketSnapshot,type MarketUniverses,type Session} from "./lib/api";
 
 type Tab="breadth"|"gainers"|"contributors";
-type Mode="EQ"|"FUT";
+type UniverseKey="NIFTY_50"|"BANK_NIFTY"|"NIFTY_NEXT_50"|"ABOVE_20"|"FNO"|"ALL";
+const UNIVERSE_OPTIONS:{value:UniverseKey;label:string}[]=[{value:"NIFTY_50",label:"NIFTY 50"},{value:"BANK_NIFTY",label:"BANK NIFTY"},{value:"NIFTY_NEXT_50",label:"NIFTY NEXT 50"},{value:"ABOVE_20",label:"Securities > Rs 20"},{value:"FNO",label:"F&O Securities"},{value:"ALL",label:"All Securities"}];
 const money=(v:number)=>new Intl.NumberFormat("en-IN",{maximumFractionDigits:2}).format(v);
 const pct=(v:number)=>`${v>0?"+":""}${v.toFixed(2)}%`;
 
 export default function App(){
  const [session,setSession]=useState<Session|null>(null);
  const [loading,setLoading]=useState(true),[busy,setBusy]=useState(false),[error,setError]=useState("");
- const [tab,setTab]=useState<Tab>("breadth"),[mode,setMode]=useState<Mode>("EQ");
+ const [tab,setTab]=useState<Tab>("breadth"),[universe,setUniverse]=useState<UniverseKey>("NIFTY_50");
+ const [universes,setUniverses]=useState<MarketUniverses|null>(null);
  const [snapshot,setSnapshot]=useState<MarketSnapshot|null>(null),[stream,setStream]=useState("disconnected");
  const [search,setSearch]=useState(""),[showAll,setShowAll]=useState(false);
  const socket=useRef<WebSocket|null>(null);
@@ -24,6 +26,7 @@ export default function App(){
   const start=async()=>{
    try{
     const initial=await api.marketSnapshot();if(!active)return;setSnapshot(initial);
+    const officialUniverses=await api.marketUniverses();if(!active)return;setUniverses(officialUniverses);
     const protocol=location.protocol==="https:"?"wss:":"ws:";
     const ws=new WebSocket(`${protocol}//${location.host}/api/market/stream`);
     socket.current=ws;setStream("connecting");
@@ -59,10 +62,23 @@ export default function App(){
 
  const connect=async()=>{setBusy(true);setError("");try{location.assign((await api.login()).login_url)}catch(e){setError(e instanceof Error?e.message:"Unable to start login.");setBusy(false)}};
  const logout=async()=>{setBusy(true);setError("");socket.current?.close();try{await api.logout();setSession(null);setSnapshot(null);setStream("disconnected")}catch(e){setError(e instanceof Error?e.message:"Logout failed.")}finally{setBusy(false)}};
- const rows=useMemo(()=>{if(!snapshot)return[];return mode==="EQ"?snapshot.all_equity:snapshot.all_futures},[snapshot,mode]);
- const gainers=mode==="EQ"?snapshot?.equity.gainers||[]:snapshot?.futures.gainers||[];
- const losers=mode==="EQ"?snapshot?.equity.losers||[]:snapshot?.futures.losers||[];
+ const rows=useMemo(()=>{
+  if(!snapshot)return[];
+  const equity=snapshot.all_equity;
+  if(universe==="ABOVE_20")return equity.filter(row=>row.last_price>20);
+  if(universe==="FNO"){
+   const symbols=new Set(universes?.fno_symbols||[]);
+   return equity.filter(row=>symbols.has(row.symbol.toUpperCase()));
+  }
+  if(universe==="ALL")return equity;
+  const constituents=universes?.constituents[universe];
+  if(!constituents)return[];
+  const symbols=new Set(constituents);
+  return equity.filter(row=>symbols.has(row.symbol.toUpperCase()));
+ },[snapshot,universe,universes]);
  const searched=rows.filter(r=>r.symbol.toLowerCase().includes(search.toLowerCase())||r.name.toLowerCase().includes(search.toLowerCase()));
+ const rankedGainers=searched.filter(r=>r.change_percent>0).sort((a,b)=>b.change_percent-a.change_percent);
+ const rankedLosers=searched.filter(r=>r.change_percent<0).sort((a,b)=>a.change_percent-b.change_percent);
  const connected=stream==="connected"||snapshot?.status==="connected";
  const tickAgeSeconds=snapshot?.last_tick_received_at?Math.max(0,Math.floor((Date.now()-new Date(snapshot.last_tick_received_at).getTime())/1000)):null;
  const freshTicks=tickAgeSeconds!==null&&tickAgeSeconds<30;
@@ -89,10 +105,10 @@ export default function App(){
       <div className="breadth-bar"><div className="bar-label"><b>Advances</b><span>{breadth?.advances??0}</span></div><div className="track"><i className="up-fill" style={{width:`${breadth?breadth.advances/Math.max(1,breadth.total)*100:0}%`}}/></div><div className="bar-label"><b>Declines</b><span>{breadth?.declines??0}</span></div><div className="track"><i className="down-fill" style={{width:`${breadth?breadth.declines/Math.max(1,breadth.total)*100:0}%`}}/></div></div>
       <div className="section-head"><div><h3>Market movers</h3><p>Top 10 gainers and losers from received NSE equity ticks</p></div></div><div className="two-col"><MoverList title="Top gainers" rows={snapshot?.equity.gainers.slice(0,10)||[]} positive/><MoverList title="Top losers" rows={snapshot?.equity.losers.slice(0,10)||[]}/></div>
      </section>}
-    {tab==="gainers"&&<section className="panel"><div className="panel-title"><div><h2>Gainers & losers</h2><p>Ranked by percentage change against previous close</p></div><div className="toggle"><button className={mode==="EQ"?"chosen":""} onClick={()=>setMode("EQ")}>EQ</button><button className={mode==="FUT"?"chosen":""} onClick={()=>setMode("FUT")}>FUT</button></div></div>
-      <div className="market-toolbar"><label className="search"><Search size={15}/><input placeholder="Search symbol" value={search} onChange={e=>setSearch(e.target.value)}/></label><span>{mode==="EQ"?"NSE EQUITY":"NEAREST NFO FUTURES"}</span></div>
-      <div className="two-col"><MoverList title="Top gainers" rows={searched.filter(r=>r.change_percent>0).sort((a,b)=>b.change_percent-a.change_percent).slice(0,showAll?50:10)} positive/><MoverList title="Top losers" rows={searched.filter(r=>r.change_percent<0).sort((a,b)=>a.change_percent-b.change_percent).slice(0,showAll?50:10)}/></div>
-      <button className="show-more" onClick={()=>setShowAll(v=>!v)}>{showAll?"Show less":"Show more"}</button>
+    {tab==="gainers"&&<section className="panel"><div className="panel-title"><div><h2>Gainers & losers</h2><p>Live NSE equity ranking · percentage change from previous close</p></div><span className="live-label">{rows.length} MATCHED SECURITIES</span></div>
+      <div className="universe-toolbar"><label className="universe-select"><span>Select Index</span><select value={universe} onChange={e=>{setUniverse(e.target.value as UniverseKey);setShowAll(false)}}>{UNIVERSE_OPTIONS.map(option=><option value={option.value} key={option.value}>{option.label}</option>)}</select></label><label className="search"><Search size={15}/><input placeholder="Search symbol" value={search} onChange={e=>setSearch(e.target.value)}/></label></div>
+      {!universes&&<div className="empty">Loading official NSE constituent lists…</div>}
+      {universes&&<><div className="two-col"><MoverList title="Top 20 gainers" rows={rankedGainers.slice(0,showAll?50:20)} positive/><MoverList title="Top 20 losers" rows={rankedLosers.slice(0,showAll?50:20)}/></div><button className="show-more" onClick={()=>setShowAll(v=>!v)}>{showAll?"Show top 20":"Show more"}</button></>}
      </section>}
     {tab==="contributors"&&<section className="panel"><div className="panel-title"><div><h2>Index contributors</h2><p>Live index quotes are available; constituent-weighted points require an official index weight feed.</p></div></div>
       <div className="index-grid">{(snapshot?.indices||[]).map(i=><div className="index-card" key={i.instrument_token}><b>{i.symbol}</b><strong>{money(i.last_price)}</strong><span className={i.change>=0?"up":"down"}>{pct(i.change_percent)}</span></div>)}</div>
