@@ -223,6 +223,18 @@ class MarketDataEngine:
         with self._lock:
             return sorted(self._fno_symbols)
 
+    def is_feed_fresh(self, max_age_seconds: int = 5):
+        with self._lock:
+            stamp = self._last_tick_received_at
+            status = self._status
+        if status != "connected" or not stamp:
+            return False
+        try:
+            received = datetime.fromisoformat(stamp)
+            return (datetime.now(timezone.utc) - received).total_seconds() <= max_age_seconds
+        except (TypeError, ValueError):
+            return False
+
     def snapshot(self):
         with self._lock:
             rows = list(self._ticks.values())
