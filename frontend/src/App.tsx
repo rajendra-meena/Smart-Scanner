@@ -59,7 +59,7 @@ export default function App(){
 
  const connect=async()=>{setBusy(true);setError("");try{location.assign((await api.login()).login_url)}catch(e){setError(e instanceof Error?e.message:"Unable to start login.");setBusy(false)}};
  const logout=async()=>{setBusy(true);setError("");socket.current?.close();try{await api.logout();setSession(null);setSnapshot(null);setStream("disconnected")}catch(e){setError(e instanceof Error?e.message:"Logout failed.")}finally{setBusy(false)}};
- const rows=useMemo(()=>{if(!snapshot)return[];return mode==="EQ"?[...snapshot.equity.gainers,...snapshot.equity.losers]:[...snapshot.futures.gainers,...snapshot.futures.losers]},[snapshot,mode]);
+ const rows=useMemo(()=>{if(!snapshot)return[];return mode==="EQ"?snapshot.all_equity:snapshot.all_futures},[snapshot,mode]);
  const gainers=mode==="EQ"?snapshot?.equity.gainers||[]:snapshot?.futures.gainers||[];
  const losers=mode==="EQ"?snapshot?.equity.losers||[]:snapshot?.futures.losers||[];
  const searched=rows.filter(r=>r.symbol.toLowerCase().includes(search.toLowerCase())||r.name.toLowerCase().includes(search.toLowerCase()));
