@@ -19,6 +19,10 @@ class OpeningBreakoutStore:
         self.lock = RLock()
         with self.connect() as db:
             db.execute(
+                "CREATE TABLE IF NOT EXISTS strategy_settings "
+                "(key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT NOT NULL)"
+            )
+            db.execute(
                 "CREATE TABLE IF NOT EXISTS strategy_trades "
                 "(id TEXT PRIMARY KEY, trade_date TEXT NOT NULL, symbol TEXT NOT NULL, "
                 "mode TEXT NOT NULL, payload TEXT NOT NULL, created_at TEXT NOT NULL)"
@@ -74,6 +78,27 @@ class OpeningBreakoutStore:
             # Keep the journal intact for a later retry; never discard it on
             # a partial or failed replay.
             return 0
+
+
+    def save_settings(self, values: dict):
+        """Persist validated strategy settings atomically."""
+        with self.lock:
+            with self.connect() as db:
+                for key, value in values.items():
+                    db.execute(
+                        "INSERT INTO strategy_settings (key, value, updated_at) "
+                        "VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET "
+                        "value=excluded.value, updated_at=excluded.updated_at",
+                        (key, json.dumps(value), datetime.now().isoformat()),
+                    )
+
+    def load_settings(self):
+        with self.lock:
+            with self.connect() as db:
+                rows = db.execute(
+                    "SELECT key, value FROM strategy_settings"
+                ).fetchall()
+            return {row["key"]: json.loads(row["value"]) for row in rows}
 
     def save_trade(self, trade: dict):
         with self.lock:
