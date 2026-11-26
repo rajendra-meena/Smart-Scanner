@@ -49,7 +49,7 @@ Open **http://127.0.0.1:5173** (use this hostname consistently for the browser s
 - The instrument master is fetched through Kite Connect and filtered to NSE cash equities, nearest-expiry NFO futures, and selected NSE indices.
 - Equity and futures gainers/losers are ranked against the previous close in the streamed quote packets.
 - Advance/decline currently represents the subscribed NSE cash-equity universe for which ticks have been received in the current session. It is not an official NIFTY index constituent breadth calculation.
-- The app caps subscriptions at 3,000 instruments per Kite WebSocket connection.
+- The app caps subscriptions at 3,000 instruments per Kite WebSocket connection.\n- Ticks with a zero/missing LTP or previous close are excluded from rankings and breadth; they are counted in diagnostics instead of being shown as -100% moves.\n- The UI distinguishes a connected WebSocket from fresh ticks. A connected socket alone is not represented as proof that the market is currently streaming.
 - Index quotes are shown when received. Weighted index contributor points are intentionally not calculated yet: verified constituent weights are not provided by the Kite instrument master and must be integrated from a reliable official index constituent source before displaying contribution rankings.
 - Live ticks arrive during exchange trading; outside market hours the connection may be established but no fresh tick stream should be expected.
 
