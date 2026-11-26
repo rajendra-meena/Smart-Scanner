@@ -68,6 +68,13 @@ class OpeningBreakoutService:
 
     def on_market_tick(self,rows):
         now=datetime.now(IST)
+        feed_state=self.market_data.snapshot()
+        if feed_state["status"]!="connected" or not feed_state["last_tick_received_at"]:
+            with self.lock:
+                if self.running:
+                    self.running=False
+                    self.events.append({"time":now.isoformat(),"event":"FEED_GUARD_STOP","reason":"Market data connection is not healthy"})
+            return
         with self.lock:
             if not self.running:return
             if now.date().isoformat()!=self._day:self.running=False;return
@@ -84,6 +91,8 @@ class OpeningBreakoutService:
                 if symbol in self._traded_symbols:continue
                 signal=self.engine.on_tick(row,now)
                 if not signal:continue
+                if len([p for p in self.positions.values() if p["status"]=="OPEN"])+len(self._pending_contracts) >= self.config.max_positions:
+                    self.events.append({"time":now.isoformat(),"event":"SIGNAL_SKIPPED","symbol":symbol,"reason":"Maximum open positions reached"});continue
                 self._traded_symbols.add(symbol);self.engine.mark_traded(symbol)
                 if len([p for p in self.positions.values() if p["status"] in ("OPEN","WAITING_QUOTE")]) >= self.config.max_positions:
                     self.events.append({"time":now.isoformat(),"event":"SIGNAL_SKIPPED","symbol":symbol,"reason":"Maximum open positions reached"});continue
