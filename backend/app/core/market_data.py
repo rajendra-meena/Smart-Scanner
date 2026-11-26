@@ -75,7 +75,7 @@ class MarketDataEngine:
                 "instrument_token": int(r["instrument_token"]), "symbol": r.get("tradingsymbol"),
                 "name": r.get("name") or r.get("tradingsymbol"), "exchange": r.get("exchange"),
                 "segment": r.get("segment"), "instrument_type": r.get("instrument_type") or "INDEX",
-                "expiry": r.get("expiry").isoformat() if r.get("expiry") else None, "lot_size": r.get("lot_size")
+                "expiry": r.get("expiry").isoformat() if r.get("expiry") else None, "lot_size": r.get("lot_size"), "strike": float(r.get("strike") or 0), "tick_size": float(r.get("tick_size") or 0.05)
             } for r in selected}
             tokens = list(instrument_map)
             with self._lock:
