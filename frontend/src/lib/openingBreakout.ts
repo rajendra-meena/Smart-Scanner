@@ -1,0 +1,4 @@
+export type BreakoutTrade={id:string;symbol:string;direction:string;mode:string;status:string;entry_price?:number;exit_price?:number;exit_reason?:string};
+export type BreakoutStatus={running:boolean;mode:string|null;market_data_ready:boolean;watchlist_count:number;open_positions:number;trades_count:number;watchlist?:unknown[];events:string[]};
+async function call<T>(path:string,init:RequestInit={}):Promise<T>{const r=await fetch("/api/strategies/opening-breakout"+path,{...init,credentials:"include",headers:{"Content-Type":"application/json",...init.headers}});if(!r.ok){const x=await r.json().catch(()=>({}));throw new Error(x.detail||"Strategy request failed")}return r.json() as Promise<T>}
+export const api={status:()=>call<BreakoutStatus>("/status"),trades:()=>call<BreakoutTrade[]>("/trades"),start:(mode:"PAPER"|"LIVE")=>call("/start",{method:"POST",body:JSON.stringify({mode,confirm_live:false})}),stop:()=>call("/stop",{method:"POST"})};
