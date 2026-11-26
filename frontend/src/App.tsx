@@ -7,6 +7,7 @@ type UniverseKey="NIFTY_50"|"BANK_NIFTY"|"NIFTY_NEXT_50"|"ABOVE_20"|"FNO"|"ALL";
 const UNIVERSE_OPTIONS:{value:UniverseKey;label:string}[]=[{value:"NIFTY_50",label:"NIFTY 50"},{value:"BANK_NIFTY",label:"BANK NIFTY"},{value:"NIFTY_NEXT_50",label:"NIFTY NEXT 50"},{value:"ABOVE_20",label:"Securities > Rs 20"},{value:"FNO",label:"F&O Securities"},{value:"ALL",label:"All Securities"}];
 const money=(v:number)=>new Intl.NumberFormat("en-IN",{maximumFractionDigits:2}).format(v);
 const pct=(v:number)=>`${v>0?"+":""}${v.toFixed(2)}%`;
+const volumeText=(v:number)=>v>=10000000?`${(v/10000000).toFixed(2)} Cr`:v>=100000?`${(v/100000).toFixed(2)} L`:new Intl.NumberFormat("en-IN",{maximumFractionDigits:0}).format(v);
 
 export default function App(){
  const [session,setSession]=useState<Session|null>(null);
@@ -108,7 +109,7 @@ export default function App(){
     {tab==="gainers"&&<section className="panel"><div className="panel-title"><div><h2>Gainers & losers</h2><p>Live NSE equity ranking · percentage change from previous close</p></div><span className="live-label">{rows.length} MATCHED SECURITIES</span></div>
       <div className="universe-toolbar"><label className="universe-select"><span>Select Index</span><select value={universe} onChange={e=>{setUniverse(e.target.value as UniverseKey);setShowAll(false)}}>{UNIVERSE_OPTIONS.map(option=><option value={option.value} key={option.value}>{option.label}</option>)}</select></label><label className="search"><Search size={15}/><input placeholder="Search symbol" value={search} onChange={e=>setSearch(e.target.value)}/></label></div>
       {!universes&&<div className="empty">{universeLoadError?`Unable to load official NSE constituent lists: ${universeLoadError}`:"Loading official NSE constituent lists…"}</div>}
-      {universes&&<><div className="two-col"><MoverList title="Top 20 gainers" rows={rankedGainers.slice(0,showAll?50:20)} positive/><MoverList title="Top 20 losers" rows={rankedLosers.slice(0,showAll?50:20)}/></div><button className="show-more" onClick={()=>setShowAll(v=>!v)}>{showAll?"Show top 20":"Show more"}</button></>}
+      {universes&&<><div className="mover-stack"><MoverList title="Top 20 gainers" rows={rankedGainers.slice(0,showAll?50:20)} positive/><MoverList title="Top 20 losers" rows={rankedLosers.slice(0,showAll?50:20)}/></div><button className="show-more" onClick={()=>setShowAll(v=>!v)}>{showAll?"Show top 20":"Show more"}</button></>}
      </section>}
     {tab==="contributors"&&<section className="panel"><div className="panel-title"><div><h2>Index contributors</h2><p>Live index quotes are available; constituent-weighted points require an official index weight feed.</p></div></div>
       <div className="index-grid">{(snapshot?.indices||[]).map(i=><div className="index-card" key={i.instrument_token}><b>{i.symbol}</b><strong>{money(i.last_price)}</strong><span className={i.change>=0?"up":"down"}>{pct(i.change_percent)}</span></div>)}</div>
@@ -121,6 +122,5 @@ export default function App(){
 }
 
 function MoverList({title,rows,positive=false}:{title:string;rows:MarketRow[];positive?:boolean}){
- const max=Math.max(0.01,...rows.map(r=>Math.abs(r.change_percent)));
- return <div className="mover-card"><div className="mover-title"><h3>{title}</h3><span>{rows.length} instruments</span></div>{rows.length?rows.map(row=><div className="mover-row" key={row.instrument_token}><b title={row.name}>{row.symbol}</b><div className="mover-track"><i className={positive?"up-fill":"down-fill"} style={{width:`${Math.max(3,Math.abs(row.change_percent)/max*100)}%`}}/></div><strong className={positive?"up":"down"}>{pct(row.change_percent)}</strong></div>):<div className="empty">Waiting for live ticks…</div>}</div>;
+ return <div className="mover-card mover-table-card"><div className="mover-title"><h3>{title}</h3><span>{rows.length} instruments</span></div>{rows.length?<div className="mover-table-wrap"><table className="mover-table"><thead><tr><th>SYMBOL</th><th>OPEN</th><th>HIGH</th><th>LOW</th><th>PREV. CLOSE</th><th>LTP</th><th>% CHNG</th><th>VOLUME</th></tr></thead><tbody>{rows.map(row=><tr key={row.instrument_token}><td className="symbol-cell">{row.symbol}</td><td>{money(row.open)}</td><td>{money(row.high)}</td><td>{money(row.low)}</td><td>{money(row.close)}</td><td className="ltp-cell">{money(row.last_price)}</td><td className={row.change_percent>=0?"up":"down"}>{pct(row.change_percent)}</td><td>{volumeText(row.volume)}</td></tr>)}</tbody></table></div>:<div className="empty">No valid live market rows available for this selection.</div>}</div>;
 }
