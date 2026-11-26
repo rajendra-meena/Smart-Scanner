@@ -94,8 +94,6 @@ class OpeningBreakoutService:
                 if len([p for p in self.positions.values() if p["status"]=="OPEN"])+len(self._pending_contracts) >= self.config.max_positions:
                     self.events.append({"time":now.isoformat(),"event":"SIGNAL_SKIPPED","symbol":symbol,"reason":"Maximum open positions reached"});continue
                 self._traded_symbols.add(symbol);self.engine.mark_traded(symbol)
-                if len([p for p in self.positions.values() if p["status"] in ("OPEN","WAITING_QUOTE")]) >= self.config.max_positions:
-                    self.events.append({"time":now.isoformat(),"event":"SIGNAL_SKIPPED","symbol":symbol,"reason":"Maximum open positions reached"});continue
                 contract=self._select_atm(symbol,signal)
                 if not contract:
                     self.events.append({"time":now.isoformat(),"event":"SIGNAL_SKIPPED","symbol":symbol,"reason":"No valid nearest ATM option in current instrument master"});continue
