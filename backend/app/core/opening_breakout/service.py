@@ -519,7 +519,7 @@ class OpeningBreakoutService:
             if not self.running:
                 return
             self._cancel_pending_entries(now, f"TIME_EXIT_{self.config.exit_time}")
-            self._exit_open_paper_positions(now, "TIME_EXIT_09_30")
+            self._exit_open_paper_positions(now, f"TIME_EXIT_{self.config.exit_time}")
             self.running = False
             if self._exit_timer:
                 self._exit_timer.cancel()
