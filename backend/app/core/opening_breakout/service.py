@@ -110,7 +110,7 @@ class OpeningBreakoutService:
         exit_time = self._exit_clock_time()
         if now.time() < time(9, 15, 30) or now.time() >= exit_time:
             raise RuntimeError(
-                "Opening Breakout can only be started between 09:15:30 and 09:30 IST."
+                f"Opening Breakout can only be started after 09:15:30 and before {self.config.exit_time} IST."
             )
         with self.lock:
             if self.running:
