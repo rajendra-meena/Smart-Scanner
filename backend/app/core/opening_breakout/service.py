@@ -249,7 +249,7 @@ class OpeningBreakoutService:
                 "time": now.isoformat(),
                 "event": "PAPER_EXIT_PERSIST_FAILED",
                 "symbol": position["symbol"],
-                "reason": "FEED_GUARD_EXIT",
+                "reason": exit_reason,
                 "message": persistence_error,
             })
 
@@ -257,7 +257,7 @@ class OpeningBreakoutService:
             "time": now.isoformat(),
             "event": "PAPER_EXIT_UNPRICED",
             "symbol": position["symbol"],
-            "reason": "FEED_GUARD_EXIT",
+            "reason": exit_reason,
             "message": "Position closed without a reliable exit quote",
         })
 
