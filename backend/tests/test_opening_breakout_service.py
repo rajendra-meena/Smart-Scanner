@@ -1103,6 +1103,11 @@ def test_square_off_never_uses_stale_cached_option_bid(
     assert service.engine.stocks["XYZ"].active_position_id is None
     assert len(store.saved_trades) == 1
     assert store.saved_trades[0]["exit_price"] is None
+    unpriced_event = next(
+        event for event in service.events
+        if event["event"] == "PAPER_EXIT_UNPRICED"
+    )
+    assert unpriced_event["reason"] == "TIME_EXIT_09_30_UNPRICED"
 
 
 def test_square_off_accepts_fresh_option_tick_from_cutoff_batch(
