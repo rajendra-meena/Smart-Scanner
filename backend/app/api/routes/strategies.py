@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
+from pydantic import field_validator
 
 from app.api.dependencies import get_current_session
 from app.core.market_data import opening_breakout_service
@@ -19,6 +20,19 @@ class ConfigRequest(BaseModel):
     stop_loss_points: float = Field(default=15, gt=0, le=100)
     max_positions: int = Field(default=6, ge=1, le=6)
     max_spread_percent: float = Field(default=1.0, gt=0, le=10)
+    exit_time: str = Field(default="09:30:00")
+
+    @field_validator("exit_time")
+    @classmethod
+    def validate_exit_time(cls, value):
+        try:
+            from datetime import time
+            parsed = time.fromisoformat(value)
+        except ValueError as exc:
+            raise ValueError("Exit time must use HH:MM:SS format.") from exc
+        if parsed <= time.fromisoformat("09:15:30"):
+            raise ValueError("Exit time must be after 09:15:30 IST.")
+        return parsed.isoformat(timespec="seconds")
 
 
 class ModeRequest(BaseModel):
@@ -59,7 +73,10 @@ def trades(current=Depends(get_current_session)):
 
 @router.put("/config")
 def configure(payload: ConfigRequest, current=Depends(get_current_session)):
-    return opening_breakout_service.configure(payload.model_dump())
+    try:
+        return opening_breakout_service.configure(payload.model_dump())
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @router.post("/start")
