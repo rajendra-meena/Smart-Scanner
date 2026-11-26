@@ -3,7 +3,6 @@ from datetime import datetime,time
 from zoneinfo import ZoneInfo
 from threading import RLock
 from uuid import uuid4
-from app.core.market_data import market_data_engine
 from .engine import OpeningBreakoutEngine
 from .models import BreakoutConfig
 from .store import OpeningBreakoutStore
@@ -11,7 +10,8 @@ from .store import OpeningBreakoutStore
 IST=ZoneInfo("Asia/Kolkata")
 
 class OpeningBreakoutService:
-    def __init__(self):
+    def __init__(self, market_data=None):
+        self.market_data = market_data
         self.lock=RLock();self.config=BreakoutConfig();self.engine=OpeningBreakoutEngine(self.config)
         self.store=OpeningBreakoutStore();self.running=False;self.mode=None;self.events=[]
         self.positions={};self.started_at=None;self._traded_symbols=set();self._day=None
@@ -25,7 +25,7 @@ class OpeningBreakoutService:
             return self.snapshot()
 
     def _load_universe(self,snapshot):
-        fno=set(market_data_engine.universe_symbols())
+        fno=set(self.market_data.universe_symbols())
         eligible=[r for r in snapshot["all_equity"] if r["symbol"].upper() in fno and r["instrument_type"]=="EQ" and r["open"]>0 and r["close"]>0]
         gainers=sorted([r for r in eligible if r["change_percent"]>0],key=lambda r:r["change_percent"],reverse=True)[:3]
         losers=sorted([r for r in eligible if r["change_percent"]<0],key=lambda r:r["change_percent"])[:3]
