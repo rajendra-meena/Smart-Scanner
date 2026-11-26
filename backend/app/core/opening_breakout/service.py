@@ -33,6 +33,9 @@ class OpeningBreakoutService:
 
     def start(self,mode,access_token):
         if mode!="PAPER":raise RuntimeError("Live order routing is not enabled.")
+        now=datetime.now(IST)
+        if now.time()<time(9,15,30) or now.time()>=time(9,30):
+            raise RuntimeError("Opening Breakout can only be started between 09:15:30 and 09:30 IST.")
         with self.lock:
             snap=self.market_data.snapshot()
             if snap["status"]!="connected" or not snap["last_tick_received_at"]:raise RuntimeError("Kite feed is not connected or fresh ticks unavailable.")
@@ -110,6 +113,9 @@ class OpeningBreakoutService:
         now=datetime.now(IST)
         with self.lock:
             if not self.running:return
+            for pending in self._pending_contracts.values():
+                pending["status"]="CANCELLED_TIME_EXIT"
+            self._pending_contracts.clear()
             for pos in list(self.positions.values()):
                 if pos["status"]=="OPEN":
                     tick=self._last_option_ticks.get(int(pos["option_token"]),{})
