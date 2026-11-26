@@ -14,7 +14,7 @@ pip install -r requirements.txt
 Copy-Item .env.example .env
 ```
 
-Set `KITE_API_KEY`, `KITE_API_SECRET`, `FRONTEND_ORIGIN=http://127.0.0.1:5173`, and `SESSION_COOKIE_SECURE=false` in `backend/.env`. In the Kite developer console, register this exact redirect URL: `http://127.0.0.1:8000/api/auth/zerodha/callback`.
+Set `KITE_API_KEY`, `KITE_API_SECRET`, `FRONTEND_ORIGIN=http://127.0.0.1:5173`, and `SESSION_COOKIE_SECURE=false` in `backend/.env`. After installing requirements, generate a persistent encryption key and place it in `SESSION_ENCRYPTION_KEY`:\n\n```powershell\npython -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"\n```\n\nKeep this key private and unchanged across restarts. The encrypted SQLite session database is stored at `backend/data/sessions.sqlite3` by default (relative to the backend working directory). Back up the database and the encryption key together; losing or changing the key makes existing stored sessions unreadable. In the Kite developer console, register this exact redirect URL: `http://127.0.0.1:8000/api/auth/zerodha/callback`.
 
 Start the API:
 
@@ -55,7 +55,7 @@ Open **http://127.0.0.1:5173** (use this hostname consistently for the browser s
 
 ## Development limitations and security
 
-- The in-memory session store and live feed are intended only for single-process local development. Use shared session storage and a managed feed lifecycle before deploying multiple workers or production.
+- Zerodha sessions are persisted in SQLite; access tokens are encrypted with Fernet using `SESSION_ENCRYPTION_KEY`. Keep the encryption key private and stable across restarts, and back it up securely with the database. The live market feed remains a single-process in-memory service; use a managed shared feed lifecycle before deploying multiple workers or production.
 - Set `SESSION_COOKIE_SECURE=true` behind HTTPS in production.
 - Keep `.env` private; never commit API credentials or access tokens.
 - This project currently displays market data only. It does not place orders or execute trading strategies.
