@@ -34,7 +34,7 @@ class OpeningBreakoutService:
     def start(self,mode,access_token):
         if mode!="PAPER":raise RuntimeError("Live order routing is not enabled.")
         with self.lock:
-            snap=market_data_engine.snapshot()
+            snap=self.market_data.snapshot()
             if snap["status"]!="connected" or not snap["last_tick_received_at"]:raise RuntimeError("Kite feed is not connected or fresh ticks unavailable.")
             self._load_universe(snap)
             self.positions={};self._traded_symbols=set();self.mode=mode;self.running=True
@@ -86,7 +86,7 @@ class OpeningBreakoutService:
                 if not contract:
                     self.events.append({"time":now.isoformat(),"event":"SIGNAL_SKIPPED","symbol":symbol,"reason":"No valid nearest ATM option in current instrument master"});continue
                 self._option_token_symbols[int(contract["instrument_token"])]=contract["tradingsymbol"]
-                market_data_engine.subscribe_extra([int(contract["instrument_token"])],full=True)
+                self.market_data.subscribe_extra([int(contract["instrument_token"])],full=True)
                 self.events.append({"time":now.isoformat(),"event":"SIGNAL","symbol":symbol,"direction":signal,
                                     "option_symbol":contract["tradingsymbol"],"status":"WAITING_OPTION_TICK",
                                     "detail":"ATM option subscribed; waiting for fresh full-depth option tick."})
@@ -130,7 +130,7 @@ class OpeningBreakoutService:
             return self.snapshot()
 
     def snapshot(self):
-        snap=market_data_engine.snapshot()
+        snap=self.market_data.snapshot()
         return {"running":self.running,"mode":self.mode,"market_data_ready":snap["status"]=="connected" and bool(snap["last_tick_received_at"]),
                 "watchlist_count":len(self.engine.stocks),"open_positions":sum(p["status"] in ("OPEN","WAITING_QUOTE") for p in self.positions.values())+sum(1 for p in self._pending_contracts.values() if p.get("status")=="WAITING_QUOTE"),
                 "trades_count":len(self.store.trades(datetime.now(IST).date().isoformat())),"watchlist":self.engine.snapshot(),
