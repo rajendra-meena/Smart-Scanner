@@ -1,19 +1,107 @@
-import {useEffect,useState} from "react";
-import {Activity,ArrowUpRight,BarChart3,Check,ChevronRight,Clock3,CircleHelp,LockKeyhole,LogOut,Radar,ShieldCheck,Signal,Sparkles,TrendingUp,Wallet,Wifi} from "lucide-react";
-import {api,type Session} from "./lib/api";
+import {useCallback,useEffect,useMemo,useRef,useState} from "react";
+import {Activity,ArrowDownRight,ArrowUpRight,BarChart3,Check,ChevronDown,CircleHelp,LogOut,RefreshCw,Search,ShieldCheck,Signal,Wifi,WifiOff} from "lucide-react";
+import {api,type MarketRow,type MarketSnapshot,type Session} from "./lib/api";
+
+type Tab="breadth"|"gainers"|"contributors";
+type Mode="EQ"|"FUT";
+const money=(v:number)=>new Intl.NumberFormat("en-IN",{maximumFractionDigits:2}).format(v);
+const pct=(v:number)=>`${v>0?"+":""}${v.toFixed(2)}%`;
+
 export default function App(){
- const [session,setSession]=useState<Session|null>(null),[loading,setLoading]=useState(true),[busy,setBusy]=useState(false),[error,setError]=useState("");
- const refresh=async()=>{try{setSession(await api.session())}catch{setSession(null)}finally{setLoading(false)}};
- useEffect(()=>{const p=new URLSearchParams(location.search);if(p.get("auth")==="failed")setError("Zerodha login could not be completed. Please try again.");if(p.has("auth"))history.replaceState({},document.title,location.pathname);void refresh()},[]);
+ const [session,setSession]=useState<Session|null>(null);
+ const [loading,setLoading]=useState(true),[busy,setBusy]=useState(false),[error,setError]=useState("");
+ const [tab,setTab]=useState<Tab>("breadth"),[mode,setMode]=useState<Mode>("EQ");
+ const [snapshot,setSnapshot]=useState<MarketSnapshot|null>(null),[stream,setStream]=useState("disconnected");
+ const [search,setSearch]=useState(""),[showAll,setShowAll]=useState(false);
+ const socket=useRef<WebSocket|null>(null);
+
+ const refreshSession=useCallback(async()=>{try{const value=await api.session();setSession(value)}catch{setSession(null)}finally{setLoading(false)}},[]);
+ useEffect(()=>{const params=new URLSearchParams(location.search);if(params.get("auth")==="failed")setError("Zerodha login could not be completed. Please try again.");if(params.has("auth"))history.replaceState({},document.title,location.pathname);void refreshSession()},[refreshSession]);
+
+ useEffect(()=>{
+  if(!session)return;
+  let active=true;
+  const start=async()=>{
+   try{
+    const initial=await api.marketSnapshot();if(!active)return;setSnapshot(initial);
+    const protocol=location.protocol==="https:"?"wss:":"ws:";
+    const ws=new WebSocket(`${protocol}//${location.host}/api/market/stream`);
+    socket.current=ws;setStream("connecting");
+    ws.onopen=()=>{if(active)setStream("connected")};
+    ws.onmessage=(event)=>{
+     if(!active)return;
+     try{
+      const message=JSON.parse(event.data);
+      if(message.type==="snapshot"){setSnapshot(message.data);setStream(message.data.status)}
+      if(message.type==="status")setStream(message.status);
+      if(message.type==="ticks")setSnapshot(prev=>{
+       if(!prev)return prev;
+       const map=new Map<number,MarketRow>();
+       [...prev.equity.gainers,...prev.equity.losers,...prev.futures.gainers,...prev.futures.losers,...prev.indices].forEach(row=>map.set(row.instrument_token,row));
+       message.data.forEach((row:MarketRow)=>map.set(row.instrument_token,row));
+       const rows=[...map.values()];
+       const equity=rows.filter(r=>r.instrument_type==="EQ");
+       const futures=rows.filter(r=>r.instrument_type==="FUT");
+       const indices=rows.filter(r=>r.instrument_type==="INDICES"||r.exchange==="NSE"&&r.symbol?.startsWith("NIFTY"));
+       const ranked=(items:MarketRow[],positive:boolean)=>items.filter(r=>r.close>0).sort((a,b)=>positive?b.change_percent-a.change_percent:a.change_percent-b.change_percent);
+       const advances=equity.filter(r=>r.change>0).length,declines=equity.filter(r=>r.change<0).length,unchanged=equity.filter(r=>r.change===0).length;
+       return {...prev,status:"connected",received_instruments:rows.length,breadth:{advances,declines,unchanged,total:equity.length,advance_decline_ratio:declines?Number((advances/declines).toFixed(2)):null},equity:{gainers:ranked(equity,true).slice(0,50),losers:ranked(equity,false).slice(0,50)},futures:{gainers:ranked(futures,true).slice(0,50),losers:ranked(futures,false).slice(0,50)},indices};
+      });
+     }catch{setError("Market stream message could not be processed.")}
+    };
+    ws.onerror=()=>{if(active){setStream("error");setError("Market WebSocket connection failed. Check backend logs.")}};
+    ws.onclose=()=>{if(active)setStream("disconnected")};
+   }catch(e){if(active)setError(e instanceof Error?e.message:"Unable to start market data.");}
+  };
+  void start();
+  return()=>{active=false;socket.current?.close();socket.current=null};
+ },[session]);
+
  const connect=async()=>{setBusy(true);setError("");try{location.assign((await api.login()).login_url)}catch(e){setError(e instanceof Error?e.message:"Unable to start login.");setBusy(false)}};
- const logout=async()=>{setBusy(true);setError("");try{await api.logout();setSession(null)}catch(e){setError(e instanceof Error?e.message:"Logout failed.")}finally{setBusy(false)}};
- const user=session?.user;
- return <div className="shell"><aside className="sidebar"><a className="brand"><span className="logo"><Radar size={21}/></span><span>smart<span>scanner</span><small>MARKET INTELLIGENCE</small></span></a><div className="nav-label">WORKSPACE</div><button className="nav active"><BarChart3 size={17}/>Overview<i/></button><button className="nav" disabled><Activity size={17}/>Market scanner<em>SOON</em></button><button className="nav" disabled><TrendingUp size={17}/>Watchlists<em>SOON</em></button><button className="nav" disabled><Wallet size={17}/>Portfolio<em>SOON</em></button><div className="side-bottom"><div className="help"><CircleHelp size={18}/><b>Need a hand?</b><p>Get started with your market workspace.</p><span>Explore guide ↗</span></div><small className="system"><i/> SYSTEM OPERATIONAL <span>v0.1.0</span></small></div></aside>
- <main><header className="top"><div>Workspace <ChevronRight size={13}/> <b>Overview</b></div><div className="top-right"><span className="secure"><i/> CONNECTION SECURE</span>{user?<div className="user"><span>{(user.user_shortname||user.user_name||"Z").slice(0,1)}</span>{user.user_shortname||user.user_name}<button onClick={logout} title="Logout"><LogOut size={15}/></button></div>:<span className="top-caption"><Clock3 size={14}/> YOUR MARKET DESK</span>}</div></header>
- <div className="content"><div className="welcome"><div><div className="eyebrow"><Sparkles size={13}/> YOUR MARKET, IN FOCUS</div><h1>Good to see you<span>.</span></h1><p>A clearer view of the market starts with a secure connection.</p></div><label><i/> LIVE WORKSPACE</label></div>
- {error&&<div className="error">{error}</div>}
- <section className="hero"><div className="hero-main"><div className="hero-tag"><ShieldCheck size={15}/> BROKER CONNECTION</div>{user?<><h2>Your Zerodha account<br/><span>is connected.</span></h2><p>Your secure session is active. Your market workspace is ready for the next step.</p><div className="profile"><Check size={17}/><div><b>{user.user_name||user.user_shortname}</b><small>{user.user_id} · {user.email||"Zerodha account"}</small></div><strong>CONNECTED</strong></div><button className="primary alt" onClick={logout} disabled={busy}><LogOut size={16}/>{busy?"Signing out...":"Disconnect account"}</button></>:<><h2>Bring your market<br/><span>into focus.</span></h2><p>Connect your Zerodha account to unlock a secure, real-time workspace built around your market activity.</p><button className="primary" onClick={connect} disabled={busy||loading}><Signal size={16}/>{loading?"Checking session...":busy?"Connecting...":"Connect to Zerodha"}<ArrowUpRight size={17}/></button><small className="hint"><LockKeyhole size={13}/> Secure authentication powered by Kite Connect</small></>}</div>
- <div className="art"><div className="orbit o1"/><div className="orbit o2"/><div className="orbit o3"/><div className="core"><Radar size={48}/></div><span className="chip top-chip"><i/> KITE CONNECT</span><span className="chip bottom-chip"><Wifi size={13}/> ENCRYPTED SESSION</span></div><div className="hero-foot"><span><Check size={11}/> BANK-GRADE SESSION SECURITY</span><span>POWERED BY ZERODHA KITE CONNECT</span></div></section>
- <div className="section-title"><div><small>BUILT FOR CLARITY</small><h3>Your workspace, at a glance</h3></div><span>MORE TO EXPLORE ↗</span></div><section className="cards"><article><div className="ico purple"><Radar size={19}/></div><small>01 / DISCOVER</small><h4>Market Scanner</h4><p>Spot market movements and opportunities from one focused view.</p><footer>COMING NEXT <ArrowUpRight size={14}/></footer></article><article><div className="ico blue"><TrendingUp size={19}/></div><small>02 / MONITOR</small><h4>Market Watch</h4><p>Keep the instruments that matter close and easy to follow.</p><footer>COMING NEXT <ArrowUpRight size={14}/></footer></article><article><div className="ico green"><Wallet size={19}/></div><small>03 / OVERVIEW</small><h4>Portfolio View</h4><p>Bring your account overview and holdings into one workspace.</p><footer>COMING NEXT <ArrowUpRight size={14}/></footer></article></section>
- <div className="page-foot"><span>© 2026 SMART SCANNER</span><span><LockKeyhole size={12}/> YOUR DATA STAYS YOURS</span><span>BUILT FOR BETTER DECISIONS ✳</span></div></div></main></div>
+ const logout=async()=>{setBusy(true);setError("");socket.current?.close();try{await api.logout();setSession(null);setSnapshot(null);setStream("disconnected")}catch(e){setError(e instanceof Error?e.message:"Logout failed.")}finally{setBusy(false)}};
+ const rows=useMemo(()=>{if(!snapshot)return[];return mode==="EQ"?[...snapshot.equity.gainers,...snapshot.equity.losers]:[...snapshot.futures.gainers,...snapshot.futures.losers]},[snapshot,mode]);
+ const gainers=mode==="EQ"?snapshot?.equity.gainers||[]:snapshot?.futures.gainers||[];
+ const losers=mode==="EQ"?snapshot?.equity.losers||[]:snapshot?.futures.losers||[];
+ const searched=rows.filter(r=>r.symbol.toLowerCase().includes(search.toLowerCase())||r.name.toLowerCase().includes(search.toLowerCase()));
+ const connected=stream==="connected"||snapshot?.status==="connected";
+ const breadth=snapshot?.breadth;
+ const maxAbs=Math.max(1,breadth?.advances||0,breadth?.declines||0);
+ return <div className="app-shell">
+  <aside className="side"><div className="brand"><span className="brand-mark"><Activity size={20}/></span><span>smart<span className="brand-accent">scanner</span><small>MARKET INTELLIGENCE</small></span></div><div className="nav-caption">MARKET WORKSPACE</div>
+   <button className={tab==="breadth"?"side-link selected":"side-link"} onClick={()=>setTab("breadth")}><BarChart3 size={17}/>Advance / Decline</button>
+   <button className={tab==="gainers"?"side-link selected":"side-link"} onClick={()=>setTab("gainers")}><ArrowUpRight size={17}/>Gainers / Losers</button>
+   <button className={tab==="contributors"?"side-link selected":"side-link"} onClick={()=>setTab("contributors")}><Activity size={17}/>Index Contributors</button>
+   <div className="side-bottom"><div className="security-note"><ShieldCheck size={18}/><b>Secure by design</b><p>Market data is streamed through your authenticated backend session.</p></div><span className="version">SMART SCANNER · 0.2.0</span></div>
+  </aside>
+  <main className="main"><header className="topbar"><div className="crumb">Workspace <span>/</span> <b>Market overview</b></div><div className="top-actions">{session?<><span className={connected?"connection live":"connection"}><i/>{connected?"LIVE FEED":stream.toUpperCase()}</span><span className="profile-pill">{session.user.user_shortname||session.user.user_name||session.user.user_id}</span><button className="icon-button" onClick={logout} disabled={busy} title="Logout"><LogOut size={16}/></button></>:<span className="connection">NOT CONNECTED</span>}</div></header>
+  <div className="page">
+   <div className="page-heading"><div><div className="eyebrow">YOUR MARKET, IN FOCUS</div><h1>Market overview<span>.</span></h1><p>Live market breadth and momentum from Zerodha Kite Connect.</p></div><div className="heading-right"><span className={connected?"live-dot":"muted-dot"}/>{connected?"Streaming":"Waiting for feed"}</div></div>
+   {error&&<div className="alert">{error}</div>}
+   {!session?<section className="connect-panel"><ShieldCheck size={28}/><h2>Connect your Zerodha account</h2><p>Authenticate securely to start the live market data stream.</p><button className="primary" onClick={connect} disabled={busy||loading}>{busy?"Connecting...":"Connect to Zerodha"} <ArrowUpRight size={16}/></button></section>:<>
+    <div className="status-strip"><div><span className={connected?"live-dot":"muted-dot"}/><b>{connected?"Market feed connected":"Market feed "+stream}</b><small>{snapshot?.received_instruments||0} instruments with ticks · {snapshot?.subscribed_instruments||0} subscribed</small></div><button className="subtle-button" onClick={()=>void api.marketSnapshot().then(setSnapshot).catch(e=>setError(e.message))}><RefreshCw size={14}/> Refresh snapshot</button></div>
+    <div className="tabs">{(["breadth","gainers","contributors"] as Tab[]).map(t=><button key={t} className={tab===t?"tab active":"tab"} onClick={()=>{setTab(t);setShowAll(false)}}>{t==="breadth"?"Advance Decline":t==="gainers"?"Gainer Loser":"Index Contributors"}</button>)}</div>
+    {tab==="breadth"&&<section className="panel">
+      <div className="panel-title"><div><h2>Market breadth</h2><p>NSE cash equities with live ticks received in this session</p></div><span className="live-label">LIVE UNIVERSE</span></div>
+      <div className="breadth-cards"><div className="metric positive"><small>ADVANCES</small><strong>{breadth?.advances??"—"}</strong><span>Stocks trading higher</span></div><div className="metric negative"><small>DECLINES</small><strong>{breadth?.declines??"—"}</strong><span>Stocks trading lower</span></div><div className="metric neutral"><small>UNCHANGED</small><strong>{breadth?.unchanged??"—"}</strong><span>No price change</span></div><div className="metric neutral"><small>ADV / DEC RATIO</small><strong>{breadth?.advance_decline_ratio??"—"}</strong><span>{breadth?.total??0} instruments received</span></div></div>
+      <div className="breadth-bar"><div className="bar-label"><b>Advances</b><span>{breadth?.advances??0}</span></div><div className="track"><i className="up-fill" style={{width:`${breadth?breadth.advances/Math.max(1,breadth.total)*100:0}%`}}/></div><div className="bar-label"><b>Declines</b><span>{breadth?.declines??0}</span></div><div className="track"><i className="down-fill" style={{width:`${breadth?breadth.declines/Math.max(1,breadth.total)*100:0}%`}}/></div></div>
+      <div className="section-head"><div><h3>Market movers</h3><p>Top 10 gainers and losers from received NSE equity ticks</p></div></div><div className="two-col"><MoverList title="Top gainers" rows={snapshot?.equity.gainers.slice(0,10)||[]} positive/><MoverList title="Top losers" rows={snapshot?.equity.losers.slice(0,10)||[]}/></div>
+     </section>}
+    {tab==="gainers"&&<section className="panel"><div className="panel-title"><div><h2>Gainers & losers</h2><p>Ranked by percentage change against previous close</p></div><div className="toggle"><button className={mode==="EQ"?"chosen":""} onClick={()=>setMode("EQ")}>EQ</button><button className={mode==="FUT"?"chosen":""} onClick={()=>setMode("FUT")}>FUT</button></div></div>
+      <div className="market-toolbar"><label className="search"><Search size={15}/><input placeholder="Search symbol" value={search} onChange={e=>setSearch(e.target.value)}/></label><span>{mode==="EQ"?"NSE EQUITY":"NEAREST NFO FUTURES"}</span></div>
+      <div className="two-col"><MoverList title="Top gainers" rows={searched.filter(r=>r.change_percent>0).sort((a,b)=>b.change_percent-a.change_percent).slice(0,showAll?50:10)} positive/><MoverList title="Top losers" rows={searched.filter(r=>r.change_percent<0).sort((a,b)=>a.change_percent-b.change_percent).slice(0,showAll?50:10)}/></div>
+      <button className="show-more" onClick={()=>setShowAll(v=>!v)}>{showAll?"Show less":"Show more"}</button>
+     </section>}
+    {tab==="contributors"&&<section className="panel"><div className="panel-title"><div><h2>Index contributors</h2><p>Live index quotes are available; constituent-weighted points require an official index weight feed.</p></div></div>
+      <div className="index-grid">{(snapshot?.indices||[]).map(i=><div className="index-card" key={i.instrument_token}><b>{i.symbol}</b><strong>{money(i.last_price)}</strong><span className={i.change>=0?"up":"down"}>{pct(i.change_percent)}</span></div>)}</div>
+      <div className="info-panel"><CircleHelp size={20}/><div><b>Contribution points are not being estimated</b><p>Kite Connect streams index and constituent prices, but its instrument master does not provide index constituent weights. We will add verified official index constituents and weights before calculating positive/negative contribution points. This avoids showing fabricated contribution rankings.</p></div></div>
+     </section>}
+   </>}
+   <footer className="footer"><span>SMART SCANNER · MARKET DATA</span><span><ShieldCheck size={12}/> PRIVATE SESSION · NO ORDERS PLACED</span></footer>
+  </div></main>
+ </div>;
+}
+
+function MoverList({title,rows,positive=false}:{title:string;rows:MarketRow[];positive?:boolean}){
+ const max=Math.max(0.01,...rows.map(r=>Math.abs(r.change_percent)));
+ return <div className="mover-card"><div className="mover-title"><h3>{title}</h3><span>{rows.length} instruments</span></div>{rows.length?rows.map(row=><div className="mover-row" key={row.instrument_token}><b title={row.name}>{row.symbol}</b><div className="mover-track"><i className={positive?"up-fill":"down-fill"} style={{width:`${Math.max(3,Math.abs(row.change_percent)/max*100)}%`}}/></div><strong className={positive?"up":"down"}>{pct(row.change_percent)}</strong></div>):<div className="empty">Waiting for live ticks…</div>}</div>;
 }
