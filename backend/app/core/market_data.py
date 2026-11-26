@@ -34,6 +34,7 @@ class MarketDataEngine:
         self._loop = None
         self._clients: set[asyncio.Queue] = set()
         self._last_tick_received_at = None
+        self._last_tick_monotonic = None
         self._invalid_tick_count = 0
         self._fno_symbols: set[str] = set()
         self._option_instruments: list[dict[str, Any]] = []
@@ -82,6 +83,8 @@ class MarketDataEngine:
             with self._lock:
                 self._instruments, self._subscribed, self._ticks = instrument_map, tokens, {}
                 self._last_tick_received_at = None
+                self._last_tick_monotonic = None
+                self._full_mode_tokens.clear()
                 self._invalid_tick_count = 0
             ticker = KiteTicker(api_key, access_token)
             ticker.on_ticks, ticker.on_connect = self._on_ticks, self._on_connect
@@ -101,7 +104,8 @@ class MarketDataEngine:
             full_tokens = list(self._full_mode_tokens)
         if tokens:
             ws.subscribe(tokens)
-            quote_tokens = [token for token in tokens if token not in self._full_mode_tokens]
+            full_token_set = set(full_tokens)
+            quote_tokens = [token for token in tokens if token not in full_token_set]
             if quote_tokens:
                 ws.set_mode(ws.MODE_QUOTE, quote_tokens)
             if full_tokens:
@@ -139,6 +143,7 @@ class MarketDataEngine:
             self._invalid_tick_count += invalid
             if changed:
                 self._last_tick_received_at = datetime.now(timezone.utc).isoformat()
+                self._last_tick_monotonic = clock.monotonic()
             equity = [r for r in self._ticks.values() if r["instrument_type"] == "EQ"]
             advances = sum(r["change"] > 0 for r in equity)
             declines = sum(r["change"] < 0 for r in equity)
@@ -178,6 +183,7 @@ class MarketDataEngine:
             self._option_instruments.clear()
             self._full_mode_tokens.clear()
             self._last_tick_received_at = None
+            self._last_tick_monotonic = None
             self._status, self._error = "disconnected", None
         if ticker:
             try:
@@ -224,16 +230,18 @@ class MarketDataEngine:
             return sorted(self._fno_symbols)
 
     def is_feed_fresh(self, max_age_seconds: int = 5):
+        """Return true only while connected and receiving valid ticks recently.
+
+        Monotonic time avoids wall-clock adjustments making an old feed appear
+        fresh (or a fresh feed appear stale).
+        """
         with self._lock:
-            stamp = self._last_tick_received_at
+            last_tick = self._last_tick_monotonic
             status = self._status
-        if status != "connected" or not stamp:
+        if status != "connected" or last_tick is None:
             return False
-        try:
-            received = datetime.fromisoformat(stamp)
-            return (datetime.now(timezone.utc) - received).total_seconds() <= max_age_seconds
-        except (TypeError, ValueError):
-            return False
+        age = clock.monotonic() - last_tick
+        return 0 <= age <= max_age_seconds
 
     def snapshot(self):
         with self._lock:
