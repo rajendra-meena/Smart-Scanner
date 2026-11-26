@@ -62,6 +62,9 @@ class OpeningBreakoutService:
         if now.time() < time(9, 15, 30) or now.time() >= time(9, 30):
             raise RuntimeError("Opening Breakout can only be started between 09:15:30 and 09:30 IST.")
         with self.lock:
+            if self.running:
+                raise RuntimeError("Opening Breakout is already running.")
+
             snapshot = self.market_data.snapshot()
             if not self.market_data.is_feed_fresh(5):
                 raise RuntimeError("Kite feed is not connected or fresh ticks unavailable.")

@@ -865,4 +865,29 @@ def test_start_accepts_exact_091530_boundary(service_env, monkeypatch):
     assert len(FakeTimer.instances) == 1
     assert FakeTimer.instances[0].started is True
 
+def test_duplicate_start_does_not_reset_running_strategy(
+    service_env, monkeypatch
+):
+    service, market_data, store = service_env
+    prepare_start_environment(service, market_data, monkeypatch)
+
+    # First start should succeed.
+    service.start("PAPER", "test-token")
+
+    # Create active strategy state.
+    pending = add_pending_entry(service, token=101)
+    position = add_open_position(service, token=202)
+
+    original_timer = service._exit_timer
+
+    # Second start must be rejected without changing existing state.
+    with pytest.raises(RuntimeError, match="already running"):
+        service.start("PAPER", "test-token")
+
+    assert service.running is True
+    assert service._pending_contracts[101] is pending
+    assert service.positions[position["id"]] is position
+    assert service._exit_timer is original_timer
+    assert len(FakeTimer.instances) == 1
+
     service.stop()
