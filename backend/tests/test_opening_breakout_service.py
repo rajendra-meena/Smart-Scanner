@@ -1000,6 +1000,25 @@ def test_duplicate_start_does_not_reset_running_strategy(
     service_env, monkeypatch
 ):
     service, market_data, store = service_env
+    prepare_start_environment(service, market_data, monkeypatch)
+    pending = add_pending_entry(service, token=101)
+    position = add_open_position(service, token=202)
+    service.running = True
+    service.mode = "PAPER"
+    service.started_at = "existing-start"
+    service._day = NOW.date().isoformat()
+    FakeTimer.instances.clear()
+
+    with pytest.raises(RuntimeError, match="already running"):
+        service.start("PAPER", "dummy-token")
+
+    assert service.running is True
+    assert service.mode == "PAPER"
+    assert service.started_at == "existing-start"
+    assert service.positions[position["id"]] is position
+    assert service._pending_contracts[101] is pending
+    assert FakeTimer.instances == []
+    assert store.saved_trades == []
 
 
 def test_watchdog_stops_when_option_quote_stales_while_equity_feed_is_fresh(
