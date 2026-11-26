@@ -283,7 +283,7 @@ class OpeningBreakoutService:
                 for position in self.positions.values()
             )
             if stale_position:
-                self._stop_for_feed_failure(now)
+                self._stop_for_feed_failure(now, "Option quote is stale")
                 return
 
             for token, pending in list(self._pending_contracts.items()):
@@ -296,7 +296,9 @@ class OpeningBreakoutService:
             self._watchdog_timer = None
             self._schedule_watchdog()
 
-    def _stop_for_feed_failure(self, now):
+    def _stop_for_feed_failure(
+        self, now, reason="Market data connection is not healthy"
+    ):
         self._cancel_pending_entries(now, "FEED_UNHEALTHY")
 
         for position in list(self.positions.values()):
@@ -312,7 +314,7 @@ class OpeningBreakoutService:
         self.events.append({
             "time": now.isoformat(),
             "event": "FEED_GUARD_STOP",
-            "reason": "Market data connection is not healthy",
+            "reason": reason,
         })
 
     def on_market_tick(self, rows):
