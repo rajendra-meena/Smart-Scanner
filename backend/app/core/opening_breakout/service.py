@@ -38,7 +38,7 @@ class OpeningBreakoutService:
             raise RuntimeError("Opening Breakout can only be started between 09:15:30 and 09:30 IST.")
         with self.lock:
             snap=self.market_data.snapshot()
-            if snap["status"]!="connected" or not snap["last_tick_received_at"]:raise RuntimeError("Kite feed is not connected or fresh ticks unavailable.")
+            if not self.market_data.is_feed_fresh(5):raise RuntimeError("Kite feed is not connected or fresh ticks unavailable.")
             self._load_universe(snap)
             self.positions={};self._pending_contracts={};self._last_option_ticks={};self._option_token_symbols={};self._traded_symbols=set();self.mode=mode;self.running=True
             self.started_at=datetime.now(IST).isoformat();self._day=datetime.now(IST).date().isoformat()
@@ -72,8 +72,7 @@ class OpeningBreakoutService:
 
     def on_market_tick(self,rows):
         now=datetime.now(IST)
-        feed_state=self.market_data.snapshot()
-        if feed_state["status"]!="connected" or not feed_state["last_tick_received_at"]:
+        if not self.market_data.is_feed_fresh(5):
             with self.lock:
                 if self.running:
                     self.running=False
@@ -178,7 +177,7 @@ class OpeningBreakoutService:
 
     def snapshot(self):
         snap=self.market_data.snapshot()
-        return {"running":self.running,"mode":self.mode,"market_data_ready":snap["status"]=="connected" and bool(snap["last_tick_received_at"]),
+        return {"running":self.running,"mode":self.mode,"market_data_ready":self.market_data.is_feed_fresh(5),
                 "watchlist_count":len(self.engine.stocks),"open_positions":sum(p["status"]=="OPEN" for p in self.positions.values())+sum(1 for p in self._pending_contracts.values() if p.get("status")=="WAITING_QUOTE"),
                 "trades_count":len(self.store.trades(datetime.now(IST).date().isoformat())),"watchlist":self.engine.snapshot(),
                 "positions":list(self.positions.values())+[p for p in self._pending_contracts.values() if p.get("status")=="WAITING_QUOTE"],"events":self.events[-100:],"market_status":snap["status"],
