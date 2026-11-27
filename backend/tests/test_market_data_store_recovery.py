@@ -178,6 +178,19 @@ def test_option_subscription_rejects_unknown_token_without_mutation():
     assert engine._full_mode_tokens == set()
 
 
+def test_completed_trades_can_be_filtered_by_trading_date(tmp_path):
+    store = OpeningBreakoutStore(str(tmp_path / "opening_breakout.sqlite3"))
+    today = make_trade("today")
+    yesterday = {**make_trade("yesterday"), "trade_date": "2026-11-26"}
+
+    store.save_trade(today)
+    store.save_trade(yesterday)
+
+    assert store.trades("2026-11-27") == [today]
+    assert store.trades("2026-11-26") == [yesterday]
+    assert len(store.trades()) == 2
+
+
 def test_strategy_settings_persist_across_store_instances(tmp_path):
     path = str(tmp_path / "opening_breakout.sqlite3")
     first = OpeningBreakoutStore(path)
