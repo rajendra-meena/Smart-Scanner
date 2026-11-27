@@ -1,5 +1,5 @@
 import {useEffect,useRef,useState} from "react";
-import {Play,Square,Save,ShieldCheck} from "lucide-react";
+import {Play,Square,Save,ShieldCheck,RotateCcw} from "lucide-react";
 import {priceActionApi,type PriceActionConfig,type PriceActionState} from "../lib/priceAction";
 
 const initial:PriceActionConfig={enabled:true,auto_start:true,mode:"PAPER",max_positions:3,max_trades_per_day:5,stop_loss_percent:15,risk_reward:2,max_spread_percent:1,volume_filter:false,volume_multiplier:1.2,exit_time:"15:15:00",max_daily_loss:1500,gainers_count:20,losers_count:20};
@@ -13,6 +13,7 @@ export default function PriceActionIntraday(){
  const refresh=async()=>{try{const [s,st]=await Promise.all([priceActionApi.settings(),priceActionApi.status()]);if(!settingsLoaded.current){setConfig(s.config);settingsLoaded.current=true}setState(st)}catch(e){setError(e instanceof Error?e.message:"Unable to load Price Action strategy")}};
  useEffect(()=>{void refresh();const id=window.setInterval(()=>void refresh(),2000);return()=>window.clearInterval(id)},[]);
  const save=async()=>{setBusy(true);setError("");setNotice("");try{const r=await priceActionApi.save(config);setConfig(r.config);setNotice("Price Action settings saved.")}catch(e){setError(e instanceof Error?e.message:"Save failed")}finally{setBusy(false)}};
+ const reset=async()=>{if(!window.confirm("Reset all Price Action strategy settings to their default values?"))return;setBusy(true);setError("");setNotice("");try{const r=await priceActionApi.reset();setConfig(r.config);setNotice("Strategy settings have been reset to defaults and saved.")}catch(e){setError(e instanceof Error?e.message:"Reset failed")}finally{setBusy(false)}};
  const run=async(start:boolean)=>{setBusy(true);setError("");setNotice("");try{setState(start?await priceActionApi.start():await priceActionApi.stop());setNotice(start?"Price Action PAPER strategy started.":"Price Action strategy stopped.")}catch(e){setError(e instanceof Error?e.message:"Action failed")}finally{setBusy(false)}};
  const exitPosition=async(id:string)=>{if(!window.confirm("Close this PAPER position at the latest available Zerodha bid price?"))return;setBusy(true);setError("");setNotice("");try{setState(await priceActionApi.manualExit(id));setNotice("Manual exit completed using the latest Zerodha bid quote.")}catch(e){setError(e instanceof Error?e.message:"Manual exit failed")}finally{setBusy(false)}};
  const field=(label:string,key:keyof PriceActionConfig,step="1",min="0")=><label className="pa-field">{label}<input type="number" min={min} step={step} value={config[key] as number} onChange={e=>setConfig({...config,[key]:Number(e.target.value)})}/></label>;
@@ -49,7 +50,7 @@ export default function PriceActionIntraday(){
     <label className="pa-toggle">Square-off time (IST)<input type="time" step="1" value={config.exit_time} onChange={e=>setConfig({...config,exit_time:e.target.value})}/></label>
    </div>
    <p className="pa-settings-footnote">Stop loss is calculated as a percentage of the option entry premium (default 15%); target is based on the configured risk:reward ratio. Both levels are aligned to the ₹0.05 option tick size and stop loss will never be negative. Signal universe uses F&amp;O stocks from Zerodha's instrument master. Structure is built from one-minute underlying equity ticks. Option contract selection uses the nearest available expiry and ATM strike.</p>
-   <button className="primary" disabled={busy||!!state?.running} onClick={()=>void save()}><Save size={14}/> Save strategy settings</button>
+   <div className="pa-settings-actions"><button className="primary" disabled={busy||!!state?.running} onClick={()=>void save()}><Save size={14}/> Save strategy settings</button><button className="secondary-action" disabled={busy||!!state?.running} onClick={()=>void reset()}><RotateCcw size={14}/> Reset strategy settings</button></div>
   </>}
  </section>;
 }
