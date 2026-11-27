@@ -14,7 +14,7 @@ class PriceActionSettingsRequest(BaseModel):
     mode: str = Field(default="PAPER", pattern="^PAPER$")
     max_positions: int = Field(default=3, ge=1)
     max_trades_per_day: int = Field(default=5, ge=1)
-    stop_loss_points: float = Field(default=15, gt=0, le=500)
+    stop_loss_percent: float = Field(default=15, gt=0, lt=100)
     risk_reward: float = Field(default=2.0, ge=1, le=5)
     max_spread_percent: float = Field(default=1.0, gt=0, le=5)
     volume_filter: bool = False
