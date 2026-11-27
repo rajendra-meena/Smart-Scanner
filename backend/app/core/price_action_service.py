@@ -374,19 +374,18 @@ class PriceActionService:
 
     def on_market_tick(self, rows):
         now = datetime.now(IST)
+        # Index feed diagnostics must stay current even if strategy entries are disabled/stopped.
+        # Route by the authoritative NSE INDICES segment as well as normalized type.
+        for row in rows:
+            if row.get("segment") == "INDICES" or row.get("instrument_type") == "INDEX":
+                self.market_regime.on_tick(row, now)
         with self.lock:
             if not self.config["enabled"]:
                 return
             if not self.running and self.config["auto_start"] and self.config["mode"] == "PAPER" and time(9,20) <= now.time() < time.fromisoformat(self.config["exit_time"]) and self._attempted_day != now.date().isoformat():
                 self._attempted_day = now.date().isoformat()
                 Thread(target=self._auto_start_worker, daemon=True, name="price-action-auto-start").start()
-            # Existing PAPER positions must keep receiving SL/target monitoring
-            # after a backend restart, even before the strategy is manually restarted.
-            # Keep the index regime dashboard current even while strategy entries
-            # are stopped; index ticks never create an order by themselves.
-            for row in rows:
-                if row.get("instrument_type") == "INDEX":
-                    self.market_regime.on_tick(row, now)
+            # Existing PAPER positions keep receiving SL/target monitoring after restart.
             if not self.running and not self.positions:
                 return
             if not self.market_data.is_feed_fresh(5):
