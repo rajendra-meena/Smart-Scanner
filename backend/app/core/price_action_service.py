@@ -152,6 +152,11 @@ class PriceActionService:
             losers = sorted([row for row in eligible if float(row.get("change_percent") or 0) < 0], key=lambda row: float(row.get("change_percent") or 0))[:int(self.config["losers_count"])]
             self.allowed_symbols = {str(row["symbol"]).upper() for row in gainers + losers}
 
+            # Every candidate needs broad-market confirmation plus its own
+            # mapped sector index. Unmapped symbols are rejected at signal time.
+            required_indices = self.market_regime.indices_for_symbols(self.allowed_symbols)
+            self.market_regime.register_indices(required_indices)
+
             # Load multi-day, real Zerodha index history so EMA50/ADX have
             # enough completed candles before any candidate can be approved.
             index_end = now.replace(tzinfo=None, second=0, microsecond=0)
@@ -159,12 +164,12 @@ class PriceActionService:
             index_history = {}
             for interval in ("5minute", "15minute"):
                 index_history[interval] = self.market_data.historical_index_candles(
-                    self.market_regime.REQUIRED_INDICES,
+                    required_indices,
                     index_start,
                     index_end,
                     interval=interval,
                 )
-                for index_symbol in self.market_regime.REQUIRED_INDICES:
+                for index_symbol in required_indices:
                     self.market_regime.seed_history(
                         index_symbol,
                         interval,
@@ -174,7 +179,7 @@ class PriceActionService:
             regime_snapshot = self.market_regime.snapshot()
             self.events = [{
                 "time": now.isoformat(), "event": "MARKET_REGIME_BASELINE_LOADED",
-                "detail": "Real Zerodha 5m/15m history loaded for NIFTY 50 and NIFTY BANK",
+                "detail": f"Real Zerodha 5m/15m history loaded for {', '.join(required_indices)}",
                 "regime": regime_snapshot["regime"],
                 "reason": regime_snapshot["reason"],
             }]
@@ -325,7 +330,9 @@ class PriceActionService:
                 self._attempted_day = None
 
     def _queue_option(self, signal, now):
-        allowed, regime = self.market_regime.allows(signal.get("direction"))
+        allowed, regime = self.market_regime.allows(
+            signal.get("direction"), signal.get("symbol")
+        )
         if not allowed:
             self.events.append({
                 "time": now.isoformat(),
