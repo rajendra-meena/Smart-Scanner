@@ -16,7 +16,7 @@ def make_service():
     # These tests isolate duplicate-symbol behavior; market-regime gating has
     # dedicated tests in test_market_regime_engine.py.
     service.market_regime = type("MarketRegime", (), {
-        "allows": lambda self, direction: (True, {"regime": "BULLISH"})
+        "allows": lambda self, direction, underlying_symbol=None: (True, {"regime": "BULLISH"})
     })()
     service.config = {"max_positions": 3, "max_trades_per_day": 5, "max_daily_loss": 1500}
     return service
