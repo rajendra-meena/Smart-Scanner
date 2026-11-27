@@ -104,6 +104,9 @@ class PriceActionService:
                     self._squareoff_timer = Timer(seconds, self.stop)
                     self._squareoff_timer.daemon = True
                     self._squareoff_timer.start()
+            # Keep quote-staleness supervision alive for recovered positions,
+            # even when the strategy itself is not running.
+            self._schedule_watchdog()
 
     def save_settings(self, values):
         with self.lock:
@@ -294,12 +297,30 @@ class PriceActionService:
                 self.pending.pop(token, None)
                 self.events.append({"time": now.isoformat(), "event": "PENDING_CANCELLED", "symbol": item["symbol"], "reason": "STRATEGY_STOP"})
             for pos in list(self.positions.values()):
-                if pos["status"] == "OPEN":
-                    quote = self.latest_option_quotes.get(pos["token"])
-                    if quote and (now - quote["received_at"]).total_seconds() <= 5:
-                        self._close(pos, quote.get("bid"), "MANUAL_OR_TIME_EXIT", now)
-                    else:
-                        self._close(pos, None, "EXIT_UNPRICED", now)
+                if pos["status"] != "OPEN":
+                    continue
+                quote = self.latest_option_quotes.get(pos["token"])
+                bid = float((quote or {}).get("bid") or 0)
+                quote_fresh = bool(
+                    quote
+                    and (now - quote["received_at"]).total_seconds() <= 5
+                    and bid > 0
+                )
+                if quote_fresh:
+                    self._close(pos, bid, "MANUAL_OR_TIME_EXIT", now)
+                else:
+                    # Do not turn an unpriced position into a completed trade.
+                    # Retain it in the open-position journal until a fresh bid arrives.
+                    pos["exit_requested"] = True
+                    pos["quote_stale"] = True
+                    pos["pnl"] = None
+                    self._persist_open_position(pos)
+                    self.events.append({
+                        "time": now.isoformat(),
+                        "event": "EXIT_WAITING_FOR_FRESH_QUOTE",
+                        "symbol": pos.get("symbol"),
+                        "reason": "Strategy stopped/time exit requested; position remains OPEN until a fresh valid option bid is received",
+                    })
             self.running = False
             if self._squareoff_timer:
                 self._squareoff_timer.cancel()
@@ -308,6 +329,9 @@ class PriceActionService:
                 self._watchdog_timer.cancel()
                 self._watchdog_timer = None
             self.events.append({"time": now.isoformat(), "event": "PAPER_STOPPED"})
+            # Position monitoring must continue after strategy stop while any
+            # open position is waiting for a fresh quote or its SL/target.
+            self._schedule_watchdog()
             return self.snapshot()
 
     def manual_exit(self, position_id):
@@ -332,7 +356,8 @@ class PriceActionService:
             return self.snapshot()
 
     def _schedule_watchdog(self):
-        if not self.running or self._watchdog_timer is not None:
+        has_open_positions = any(p.get("status") == "OPEN" for p in self.positions.values())
+        if (not self.running and not has_open_positions) or self._watchdog_timer is not None:
             return
         timer = Timer(1, self._watchdog_tick)
         timer.daemon = True
@@ -341,7 +366,8 @@ class PriceActionService:
 
     def _watchdog_tick(self):
         with self.lock:
-            if not self.running:
+            has_open_positions = any(p.get("status") == "OPEN" for p in self.positions.values())
+            if not self.running and not has_open_positions:
                 self._watchdog_timer = None
                 return
             now = datetime.now(IST)
@@ -364,8 +390,10 @@ class PriceActionService:
                 quote = self.latest_option_quotes.get(pos["token"])
                 if not quote or (now - quote["received_at"]).total_seconds() > 5:
                     pos["quote_stale"] = True
+                    pos["pnl"] = None
+                    self._persist_open_position(pos)
                     if pos["token"] not in self._stale_option_notified:
-                        self.events.append({"time": now.isoformat(), "event": "OPTION_QUOTE_STALE", "reason": "Waiting for next valid option quote; strategy remains active", "symbol": pos["symbol"]})
+                        self.events.append({"time": now.isoformat(), "event": "OPTION_QUOTE_STALE", "reason": "Waiting for next valid option quote; open position is retained", "symbol": pos["symbol"]})
                         self._stale_option_notified.add(pos["token"])
                 else:
                     pos["quote_stale"] = False
@@ -380,9 +408,10 @@ class PriceActionService:
             if row.get("segment") == "INDICES" or row.get("instrument_type") == "INDEX":
                 self.market_regime.on_tick(row, now)
         with self.lock:
-            if not self.config["enabled"]:
+            has_open_positions = any(p.get("status") == "OPEN" for p in self.positions.values())
+            if not self.config["enabled"] and not has_open_positions:
                 return
-            if not self.running and self.config["auto_start"] and self.config["mode"] == "PAPER" and time(9,20) <= now.time() < time.fromisoformat(self.config["exit_time"]) and self._attempted_day != now.date().isoformat():
+            if self.config["enabled"] and not self.running and self.config["auto_start"] and self.config["mode"] == "PAPER" and time(9,20) <= now.time() < time.fromisoformat(self.config["exit_time"]) and self._attempted_day != now.date().isoformat():
                 self._attempted_day = now.date().isoformat()
                 Thread(target=self._auto_start_worker, daemon=True, name="price-action-auto-start").start()
             # Existing PAPER positions keep receiving SL/target monitoring after restart.
@@ -514,7 +543,9 @@ class PriceActionService:
         pos.update(ltp=float(row.get("last_price") or 0),bid=bid,ask=ask,pnl=round((bid-pos["entry_price"])*pos["quantity"],2),quote_stale=False)
         self._persist_open_position(pos)
         self._stale_option_notified.discard(token)
-        if bid <= pos["stop_price"]: self._close(pos,bid,"STOP_LOSS",now)
+        if pos.get("exit_requested"):
+            self._close(pos, bid, "MANUAL_OR_TIME_EXIT", now)
+        elif bid <= pos["stop_price"]: self._close(pos,bid,"STOP_LOSS",now)
         elif bid >= pos["target_price"]: self._close(pos,bid,"TARGET",now)
 
     def _close(self,pos,price,reason,now):
