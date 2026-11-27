@@ -73,6 +73,7 @@ export default function App(){
  {error&&<div className="alert">{error}</div>}
  {!session?<section className="connect-panel"><ShieldCheck size={28}/><h2>Connect your Zerodha account</h2><p>Authenticate securely to start the live market data stream.</p><button className="primary" onClick={connect} disabled={busy||loading}>{busy?"Connecting...":"Connect to Zerodha"} <ArrowUpRight size={16}/></button></section>:page==="strategy"?<OpeningBreakout/>:<>
  <div className="status-strip"><div><span className={connected?"live-dot":"muted-dot"}/><b>{connected?"Market feed connected":"Market feed "+stream}</b><small>{snapshot?.received_instruments||0} instruments with ticks · {snapshot?.subscribed_instruments||0} subscribed</small></div><button className="subtle-button" onClick={()=>void api.marketSnapshot().then(setSnapshot).catch(e=>setError(e.message))}><RefreshCw size={14}/> Refresh snapshot</button></div>
+ <MarketOverview snapshot={snapshot}/>
  <section className="panel"><div className="panel-title"><div><h2>Gainers & losers</h2><p>Live NSE equity ranking · percentage change from previous close</p></div><span className="live-label">{rows.length} MATCHED SECURITIES</span></div>
  <div className="universe-toolbar"><label className="universe-select"><span>Select Index</span><select value={universe} onChange={e=>{setUniverse(e.target.value as UniverseKey);setShowAll(false)}}>{UNIVERSE_OPTIONS.map(option=><option value={option.value} key={option.value}>{option.label}</option>)}</select></label><label className="search"><Search size={15}/><input placeholder="Search symbol" value={search} onChange={e=>setSearch(e.target.value)}/></label></div>
  {!universes&&<div className="empty">{universeLoadError? `Unable to load official NSE constituent lists: ${universeLoadError}`:"Loading official NSE constituent lists…"}</div>}
@@ -81,7 +82,26 @@ export default function App(){
  <footer className="footer"><span>SMART SCANNER · MARKET INTELLIGENCE</span><span><ShieldCheck size={12}/> PRIVATE SESSION · PAPER FIRST · LIVE SAFETY GATED</span></footer>
  </div></main></div>;
 }
-function MarketHeatmap({rows}:{rows:MarketRow[]}){
+const SECTOR_INDEX_NAMES=["NIFTY AUTO","NIFTY FMCG","NIFTY IT","NIFTY PHARMA","NIFTY METAL","NIFTY REALTY","NIFTY PSU BANK","NIFTY PRIVATE BANK","NIFTY ENERGY","NIFTY MEDIA","NIFTY HEALTHCARE","NIFTY OIL AND GAS","NIFTY CONSUMER DURABLES","NIFTY FIN SERVICE"];
+const CORE_INDEX_NAMES=["NIFTY 50","NIFTY BANK","NIFTY FIN SERVICE","NIFTY NEXT 50","NIFTY MIDCAP 50","NIFTY 100","NIFTY 200","NIFTY 500"];
+function MarketOverview({snapshot}:{snapshot:MarketSnapshot|null}){
+ const allIndices=snapshot?.indices||[];
+ const sectors=allIndices.filter(row=>SECTOR_INDEX_NAMES.includes(row.symbol.toUpperCase())).sort((a,b)=>b.change_percent-a.change_percent);
+ const indices=allIndices.filter(row=>CORE_INDEX_NAMES.includes(row.symbol.toUpperCase()));
+ const advancing=sectors.filter(row=>row.change_percent>0).length;
+ const declining=sectors.filter(row=>row.change_percent<0).length;
+ const unchanged=sectors.filter(row=>row.change_percent===0).length;
+ const breadth=snapshot?.breadth;
+ return <section className="market-overview">
+  <div className="overview-topline"><div><span className="heatmap-kicker">MARKET PULSE</span><h2>Market breadth &amp; indices</h2><p>Live values from subscribed Zerodha index instruments</p></div><span className={snapshot?.status==="connected"?"overview-live":"overview-wait"}><i/> {snapshot?.status==="connected"?"LIVE INDEX FEED":"WAITING FOR INDEX TICKS"}</span></div>
+  <div className="breadth-layout">
+   <div className="breadth-card"><div className="overview-card-label">NSE EQUITY BREADTH</div><div className="breadth-counts"><div><strong className="up">{breadth?.advances??"—"}</strong><small>Advances</small></div><div><strong className="down">{breadth?.declines??"—"}</strong><small>Declines</small></div><div><strong>{breadth?.unchanged??"—"}</strong><small>Unchanged</small></div></div><div className="breadth-track">{#if false}{/if}<span style={{width:`${breadth?.total?breadth.advances/breadth.total*100:0}%`}}/><i style={{width:`${breadth?.total?breadth.unchanged/breadth.total*100:0}%`}}/></div><div className="breadth-footer"><span>{breadth?.total??0} stocks with valid ticks</span><span>A/D {breadth?.advance_decline_ratio??"—"}</span></div></div>
+   <div className="sector-card"><div className="overview-card-heading"><div><div className="overview-card-label">SECTOR BREADTH</div><strong>{sectors.length?(`${advancing} advancing · ${declining} declining`):"Waiting for sector ticks"}</strong></div><span>{sectors.length} sectors</span></div><div className="sector-grid">{sectors.length?sectors.map(row=><div className={row.change_percent>0?"sector-chip positive":row.change_percent<0?"sector-chip negative":"sector-chip flat"} key={row.instrument_token}><span>{row.symbol.replace("NIFTY ","")}</span><b>{pct(row.change_percent)}</b></div>):<div className="overview-empty">Sector index ticks will appear when Zerodha sends live data.</div>}</div><div className="breadth-footer"><span>{advancing} up</span><span>{declining} down</span><span>{unchanged} unchanged</span></div></div>
+  </div>
+  <div className="indices-section"><div className="indices-heading"><div className="overview-card-label">KEY INDICES</div><span>Live index levels · day change</span></div><div className="indices-grid">{indices.length?indices.map(row=><div className="index-tile" key={row.instrument_token}><div><span>{row.symbol}</span><i className={row.change_percent>=0?"index-up":"index-down"}>{row.change_percent>=0?"▲":"▼"}</i></div><strong>{money(row.last_price)}</strong><small className={row.change_percent>=0?"up":"down"}>{pct(row.change_percent)}</small></div>):<div className="overview-empty">Waiting for key index ticks from Zerodha.</div>}</div></div>
+ </section>;
+}
+\nfunction MarketHeatmap({rows}:{rows:MarketRow[]}){
  const ordered=[...rows].sort((a,b)=>b.change_percent-a.change_percent);
  const maxMove=Math.max(1,...ordered.map(row=>Math.abs(row.change_percent)));
  return <section className="market-heatmap">
