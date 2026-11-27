@@ -10,7 +10,7 @@ const clock=(v:any)=>v?new Date(v).toLocaleTimeString("en-IN",{hour:"2-digit",mi
 export default function BreakfastStrategy(){
  const [config,setConfig]=useState<BreakfastConfig>(initial),[state,setState]=useState<BreakfastState|null>(null),[trades,setTrades]=useState<any[]>([]),[date,setDate]=useState(today());
  const loaded=useRef(false);const [tab,setTab]=useState<"dashboard"|"settings">("dashboard"),[busy,setBusy]=useState(false),[error,setError]=useState(""),[notice,setNotice]=useState("");
- const refresh=async()=>{try{const [s,st]=await Promise.all([breakfastApi.settings(),breakfastApi.status()]);if(!loaded.current){setConfig(s.config);loaded.current=true}setState(st)}catch(e){setError(e instanceof Error?e.message:"Unable to load Breakfast Strategy")}};
+ const refresh=async()=>{try{const [s,st,t]=await Promise.all([breakfastApi.settings(),breakfastApi.status(),breakfastApi.trades(date)]);setTrades(t);if(!loaded.current){setConfig(s.config);loaded.current=true}setState(st)}catch(e){setError(e instanceof Error?e.message:"Unable to load Breakfast Strategy")}};
  const refreshTrades=async()=>{try{setTrades(await breakfastApi.trades(date))}catch(e){setError(e instanceof Error?e.message:"Unable to load trades")}};
  useEffect(()=>{void refresh();const t=window.setInterval(()=>void refresh(),2000);return()=>window.clearInterval(t)},[]);
  useEffect(()=>{void refreshTrades()},[date]);
