@@ -7,7 +7,8 @@ const fmt=(v:any)=>typeof v==="number"?v.toLocaleString("en-IN",{maximumFraction
 const clock=(v:any)=>v?new Date(v).toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit",second:"2-digit"}):"—";
 
 export default function PriceActionIntraday(){
- const [config,setConfig]=useState<PriceActionConfig>(initial),[state,setState]=useState<PriceActionState|null>(null);\n const settingsLoaded=useRef(false);
+ const [config,setConfig]=useState<PriceActionConfig>(initial),[state,setState]=useState<PriceActionState|null>(null);
+ const settingsLoaded=useRef(false);
  const [tab,setTab]=useState<"dashboard"|"settings">("dashboard"),[busy,setBusy]=useState(false),[error,setError]=useState(""),[notice,setNotice]=useState("");
  const refresh=async()=>{try{const [s,st]=await Promise.all([priceActionApi.settings(),priceActionApi.status()]);if(!settingsLoaded.current){setConfig(s.config);settingsLoaded.current=true}setState(st)}catch(e){setError(e instanceof Error?e.message:"Unable to load Price Action strategy")}};
  useEffect(()=>{void refresh();const id=window.setInterval(()=>void refresh(),2000);return()=>window.clearInterval(id)},[]);
