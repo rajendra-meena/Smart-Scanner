@@ -179,12 +179,68 @@ class PriceActionService:
                         now=now,
                     )
             regime_snapshot = self.market_regime.snapshot()
+            history_diagnostics = self.market_data.index_history_diagnostics()
             self.events = [{
-                "time": now.isoformat(), "event": "MARKET_REGIME_BASELINE_LOADED",
-                "detail": f"Real Zerodha 5m/15m history loaded for {', '.join(required_indices)}",
+                "time": now.isoformat(), "event": "MARKET_REGIME_HISTORY_AUDIT",
+                "detail": f"Requested real Zerodha 5m/15m history for {len(required_indices)} required indices",
                 "regime": regime_snapshot["regime"],
                 "reason": regime_snapshot["reason"],
             }]
+            for index_symbol in required_indices:
+                index_state = regime_snapshot.get("indices", {}).get(index_symbol, {})
+                history_state = index_state.get("history", {})
+                for interval in ("5minute", "15minute"):
+                    fetch = history_diagnostics.get(
+                        f"{index_symbol}:{interval}",
+                        {"status": "UNKNOWN", "error": "No fetch diagnostic returned", "candle_count": 0},
+                    )
+                    self.events.append({
+                        "time": now.isoformat(),
+                        "event": "INDEX_HISTORY_DIAGNOSTIC",
+                        "symbol": index_symbol,
+                        "interval": interval,
+                        "status": fetch.get("status"),
+                        "candle_count": fetch.get("candle_count", 0),
+                        "error": fetch.get("error"),
+                        "detail": (
+                            f"{index_symbol} {interval}: fetch={fetch.get('status')}, "
+                            f"received={fetch.get('candle_count', 0)}, "
+                            f"seeded={history_state.get('5minute_candles' if interval == '5minute' else '15minute_candles', 0)}"
+                        ),
+                    })
+                if index_state.get("regime") == "UNKNOWN" or history_state.get("atr_status") == "UNKNOWN":
+                    self.events.append({
+                        "time": now.isoformat(),
+                        "event": "INDEX_BASELINE_NOT_READY",
+                        "symbol": index_symbol,
+                        "reason": history_state.get("atr_reason") or index_state.get("reason"),
+                        "detail": (
+                            f"5m candles={history_state.get('5minute_candles', 0)} "
+                            f"({history_state.get('5minute_sessions', 0)} sessions); "
+                            f"15m candles={history_state.get('15minute_candles', 0)} "
+                            f"({history_state.get('15minute_sessions', 0)} sessions); "
+                            f"ATR baseline sessions={history_state.get('atr_baseline_sessions', 0)}"
+                        ),
+                    })
+            unmapped = sorted(
+                symbol for symbol in self.allowed_symbols
+                if not self.market_regime.sector_index_for_symbol(symbol)
+            )
+            if unmapped:
+                self.events.append({
+                    "time": now.isoformat(),
+                    "event": "SECTOR_MAPPING_AUDIT",
+                    "status": "INCOMPLETE",
+                    "symbols": unmapped,
+                    "detail": f"{len(unmapped)} of {len(self.allowed_symbols)} current candidates have no approved sector-index mapping: {', '.join(unmapped)}",
+                })
+            else:
+                self.events.append({
+                    "time": now.isoformat(),
+                    "event": "SECTOR_MAPPING_AUDIT",
+                    "status": "COMPLETE",
+                    "detail": f"All {len(self.allowed_symbols)} current candidates have an approved sector-index mapping",
+                })
             history_start = datetime.combine(now.date(), time(9, 15))
             history_end = now.replace(tzinfo=None, second=0, microsecond=0)
             historical = self.market_data.historical_minute_candles(
