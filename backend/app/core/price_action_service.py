@@ -43,6 +43,7 @@ class PriceActionService:
         self.started_day = None
         self._squareoff_timer = None
         self._attempted_day = None
+        self.allowed_symbols = set()
 
     def save_settings(self, values):
         with self.lock:
@@ -72,6 +73,12 @@ class PriceActionService:
             self.running = True
             self.started_day = now.date().isoformat()
             self.engine.reset()
+            snapshot = self.market_data.snapshot()
+            fno_symbols = {str(symbol).upper() for symbol in self.market_data.universe_symbols()}
+            eligible = [row for row in snapshot.get("all_equity", []) if str(row.get("symbol") or "").upper() in fno_symbols and row.get("instrument_type") == "EQ" and float(row.get("last_price") or 0) > 0]
+            gainers = sorted([row for row in eligible if float(row.get("change_percent") or 0) > 0], key=lambda row: float(row.get("change_percent") or 0), reverse=True)[:int(self.config["gainers_count"])]
+            losers = sorted([row for row in eligible if float(row.get("change_percent") or 0) < 0], key=lambda row: float(row.get("change_percent") or 0))[:int(self.config["losers_count"])]
+            self.allowed_symbols = {str(row["symbol"]).upper() for row in gainers + losers}
             self.positions.clear()
             self.pending.clear()
             self.option_meta.clear()
@@ -123,7 +130,7 @@ class PriceActionService:
                 kind = row.get("instrument_type")
                 if kind in ("CE","PE"):
                     self._on_option_tick(row, now)
-                elif kind == "EQ":
+                elif kind == "EQ" and str(row.get("symbol") or "").upper() in self.allowed_symbols:
                     signal = self.engine.on_tick(row, now)
                     if signal:
                         self._queue_option(signal, now)
