@@ -145,6 +145,10 @@ class MarketDataEngine:
             price_action_service.on_feed_connected()
         except Exception:
             logger.exception("Unable to restore Price Action open-position subscriptions")
+        try:
+            breakfast_service.on_feed_connected()
+        except Exception:
+            logger.exception("Unable to restore Breakfast open-position subscriptions")
         logger.info("KiteTicker connected; subscribed to %s instruments", len(tokens))
 
     def _on_ticks(self, ws, ticks):
@@ -207,6 +211,10 @@ class MarketDataEngine:
                 price_action_service.on_market_tick(changed)
             except Exception:
                 logger.exception("Price Action Intraday tick processing failed")
+            try:
+                breakfast_service.on_market_tick(changed)
+            except Exception:
+                logger.exception("Breakfast Strategy tick processing failed")
             self._publish({"type": "ticks", "data": changed, "breadth": breadth,
                            "last_tick_received_at": self._last_tick_received_at})
 
@@ -542,5 +550,7 @@ market_data_engine = MarketDataEngine()
 # Import after the singleton exists to avoid circular dependencies.
 from app.core.opening_breakout.service import OpeningBreakoutService
 from app.core.price_action_service import PriceActionService
+from app.core.breakfast_service import BreakfastService
 opening_breakout_service = OpeningBreakoutService(market_data_engine)
 price_action_service = PriceActionService(market_data_engine)
+breakfast_service = BreakfastService(market_data_engine)

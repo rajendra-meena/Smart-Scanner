@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api.routes import auth, health, market, strategies, price_action
+from app.api.routes import auth, health, market, strategies, price_action, breakfast
 from app.core.config import settings
 
 app = FastAPI(
@@ -20,6 +20,7 @@ app.include_router(auth.router, prefix="/api")
 app.include_router(market.router, prefix="/api")
 app.include_router(strategies.router, prefix="/api")
 app.include_router(price_action.router, prefix="/api")
+app.include_router(breakfast.router, prefix="/api")
 
 
 @app.get("/")
