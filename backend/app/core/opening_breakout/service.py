@@ -274,10 +274,12 @@ class OpeningBreakoutService:
             token = int(position["option_token"])
             last_quote = self._last_option_tick_monotonic.get(token)
             if last_quote is None or now_monotonic - last_quote > 5:
+                position["exit_requested"] = True
+                position["exit_reason"] = reason
                 self._record_unpriced_feed_exit(
                     position,
                     now,
-                    exit_reason=f"{reason}_UNPRICED",
+                    exit_reason=f"{reason}_WAITING_FOR_QUOTE",
                 )
                 continue
 
@@ -292,10 +294,12 @@ class OpeningBreakoutService:
                 0,
             )
             if bid <= 0:
+                position["exit_requested"] = True
+                position["exit_reason"] = reason
                 self._record_unpriced_feed_exit(
                     position,
                     now,
-                    exit_reason=f"{reason}_UNPRICED",
+                    exit_reason=f"{reason}_WAITING_FOR_QUOTE",
                 )
                 continue
             self._close_paper(position, bid, reason, now)
@@ -303,50 +307,28 @@ class OpeningBreakoutService:
     def _record_unpriced_feed_exit(
         self, position, now, exit_reason="FEED_GUARD_EXIT"
     ):
-        """Close the paper lifecycle without inventing an exit price."""
+        """Persist an unresolved OPEN position; never fabricate an exit."""
         if position["status"] != "OPEN":
             return
 
         position.update(
-            status="CLOSED_UNPRICED",
+            status="OPEN",
             exit_price=None,
             exit_reason=exit_reason,
-            closed_at=now.isoformat(),
+            closed_at=None,
             pnl=None,
+            quote_stale=True,
         )
-
         persistence_error = None
-        persistence_deferred = False
         try:
-            saved = self.store.save_trade({
-                "id": position["id"],
-                "trade_date": now.date().isoformat(),
-                "symbol": position["symbol"],
-                **position,
-            })
-            persistence_deferred = saved is False
+            self._persist_open_position(position)
         except Exception as exc:
-            # A database and recovery-journal failure must not prevent the
-            # feed guard from stopping and releasing the in-memory position.
             persistence_error = str(exc)
 
-        self.engine.mark_position_closed(
-            position["symbol"],
-            position["id"],
-        )
-
-        if persistence_deferred:
-            self.events.append({
-                "time": now.isoformat(),
-                "event": "PAPER_EXIT_PERSIST_DEFERRED",
-                "symbol": position["symbol"],
-                "reason": exit_reason,
-                "message": "Trade queued in the durable recovery journal",
-            })
         if persistence_error is not None:
             self.events.append({
                 "time": now.isoformat(),
-                "event": "PAPER_EXIT_PERSIST_FAILED",
+                "event": "PAPER_OPEN_POSITION_PERSIST_FAILED",
                 "symbol": position["symbol"],
                 "reason": exit_reason,
                 "message": persistence_error,
@@ -354,10 +336,10 @@ class OpeningBreakoutService:
 
         self.events.append({
             "time": now.isoformat(),
-            "event": "PAPER_EXIT_UNPRICED",
+            "event": "PAPER_EXIT_WAITING_FOR_QUOTE",
             "symbol": position["symbol"],
             "reason": exit_reason,
-            "message": "Position closed without a reliable exit quote",
+            "message": "Position remains OPEN until a fresh valid option bid is received",
         })
 
     def _schedule_watchdog(self):
@@ -376,13 +358,20 @@ class OpeningBreakoutService:
 
     def _watchdog_tick(self):
         with self.lock:
-            if not self.running:
+            has_open_positions = any(
+                position.get("status") == "OPEN"
+                for position in self.positions.values()
+            )
+            if not self.running and not has_open_positions:
                 self._watchdog_timer = None
                 return
 
             now = datetime.now(IST)
             if not self.market_data.is_feed_fresh(5):
-                self._stop_for_feed_failure(now)
+                if self.running:
+                    self._stop_for_feed_failure(now)
+                self._watchdog_timer = None
+                self._schedule_watchdog()
                 return
 
             now_monotonic = monotonic()
@@ -393,7 +382,7 @@ class OpeningBreakoutService:
                 ) > 5
                 for position in self.positions.values()
             )
-            if stale_position:
+            if stale_position and self.running:
                 self._stop_for_feed_failure(now, "Option quote is stale")
                 return
 
@@ -412,8 +401,11 @@ class OpeningBreakoutService:
     ):
         self._cancel_pending_entries(now, "FEED_UNHEALTHY")
 
+        # A feed failure is not proof that a PAPER position was exited.
+        # Keep OPEN positions persisted and supervised until quotes recover.
         for position in list(self.positions.values()):
-            self._record_unpriced_feed_exit(position, now)
+            if position.get("status") == "OPEN":
+                self._persist_open_position(position)
 
         self.running = False
         self._auto_start_suppressed_day = now.date().isoformat()
@@ -428,6 +420,8 @@ class OpeningBreakoutService:
             "event": "FEED_GUARD_STOP",
             "reason": reason,
         })
+        if any(p.get("status") == "OPEN" for p in self.positions.values()):
+            self._schedule_watchdog()
 
     def on_market_tick(self, rows):
         now = datetime.now(IST)
@@ -438,6 +432,22 @@ class OpeningBreakoutService:
             return
 
         with self.lock:
+            # A stopped strategy may still own an OPEN PAPER position.
+            # Process only its option ticks; never evaluate new equity entries.
+            if not self.running:
+                open_tokens = {
+                    int(p["option_token"])
+                    for p in self.positions.values()
+                    if p.get("status") == "OPEN"
+                }
+                for row in rows:
+                    if (
+                        row.get("instrument_type") in ("CE", "PE")
+                        and int(row.get("instrument_token") or 0) in open_tokens
+                    ):
+                        self._handle_option_tick(row, now)
+                return
+
             today = now.date().isoformat()
             if not self.running:
                 exit_time = self._exit_clock_time()
@@ -602,6 +612,8 @@ class OpeningBreakoutService:
                 self._exit_timer.cancel()
                 self._exit_timer = None
             self._cancel_watchdog()
+            if any(p.get("status") == "OPEN" for p in self.positions.values()):
+                self._schedule_watchdog()
             self.events.append({
                 "time": now.isoformat(),
                 "event": "STRATEGY_TIME_EXIT",
@@ -699,7 +711,14 @@ class OpeningBreakoutService:
                 # Stop-loss decisions and simulated exits use the same
                 # executable bid-side price; LTP alone is not an exit quote.
                 executable_bid = prices[0] if prices else 0
-                if executable_bid > 0 and executable_bid <= position["stop_price"]:
+                if position.get("exit_requested") and executable_bid > 0:
+                    self._close_paper(
+                        position,
+                        executable_bid,
+                        position.get("exit_reason") or "REQUESTED_EXIT",
+                        now,
+                    )
+                elif executable_bid > 0 and executable_bid <= position["stop_price"]:
                     self._close_paper(
                         position,
                         executable_bid,
@@ -793,6 +812,8 @@ class OpeningBreakoutService:
                 self._exit_timer.cancel()
                 self._exit_timer = None
             self._cancel_watchdog()
+            if any(p.get("status") == "OPEN" for p in self.positions.values()):
+                self._schedule_watchdog()
             self.events.append({
                 "time": now.isoformat(),
                 "event": "STOPPED",
