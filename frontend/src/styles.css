@@ -203,3 +203,8 @@ body{background:radial-gradient(ellipse at 50% -28%,#5746a52b,transparent 48%),l
 .trade-date-filter input{height:36px;min-width:150px;border:1px solid #354760;border-radius:9px;padding:0 10px;background:#101a29;color:#edf3ff;color-scheme:dark;font:inherit}
 .trade-date-filter input:focus{outline:none;border-color:#a18bff;box-shadow:0 0 0 3px #a18bff22}
 @media(max-width:560px){.completed-trades-heading{align-items:flex-start;flex-direction:column}.trade-date-filter{width:100%;justify-content:space-between}.trade-date-filter input{flex:1}}
+
+.trade-id-cell{font-family:ui-monospace,SFMono-Regular,Consolas,monospace!important;font-size:9px!important;color:#9eadd0!important;max-width:150px;overflow-wrap:anywhere;white-space:normal!important}
+.danger-button{padding:7px 10px;border:1px solid #874453;border-radius:8px;background:#351d2a;color:#ff9cab;font-size:9px;font-weight:800;cursor:pointer}
+.danger-button:hover{background:#512433;border-color:#d66b80}
+.danger-button:disabled{opacity:.5;cursor:not-allowed}
