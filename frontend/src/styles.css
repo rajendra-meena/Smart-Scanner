@@ -208,3 +208,25 @@ body{background:radial-gradient(ellipse at 50% -28%,#5746a52b,transparent 48%),l
 .danger-button{padding:7px 10px;border:1px solid #874453;border-radius:8px;background:#351d2a;color:#ff9cab;font-size:9px;font-weight:800;cursor:pointer}
 .danger-button:hover{background:#512433;border-color:#d66b80}
 .danger-button:disabled{opacity:.5;cursor:not-allowed}
+
+/* Real-time gainers and losers heatmap */
+.market-heatmap{margin-top:24px;padding:20px;border:1px solid #2b4059;border-radius:16px;background:linear-gradient(145deg,#101e30,#0c1726);box-shadow:0 14px 38px #0002}
+.heatmap-heading{display:flex;justify-content:space-between;align-items:flex-start;gap:18px;margin-bottom:17px}
+.heatmap-kicker{font-size:8px;letter-spacing:1.4px;color:#a995ff;font-weight:900}
+.heatmap-heading h3{margin:6px 0 4px;font:800 15px Manrope,sans-serif;color:#edf3ff}
+.heatmap-heading p{font-size:9px;color:#91a2ba}
+.heatmap-legend{display:flex;gap:14px;align-items:center;padding:8px 10px;border:1px solid #2b4059;border-radius:9px;background:#0c1726}
+.heatmap-legend span{display:flex;align-items:center;gap:6px;color:#aebbd0;font-size:8px;font-weight:700}
+.heatmap-legend i{width:8px;height:8px;border-radius:3px;display:inline-block}
+.heat-positive{background:#28c58a}.heat-negative{background:#e65e78}
+.heatmap-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(112px,1fr));gap:8px}
+.heat-tile{position:relative;min-height:88px;padding:12px;border:1px solid #ffffff16;border-radius:10px;display:flex;flex-direction:column;justify-content:space-between;gap:7px;overflow:hidden;transition:transform .16s ease,border-color .16s ease,filter .16s ease}
+.heat-tile:hover{transform:translateY(-2px);border-color:#ffffff55;filter:brightness(1.12)}
+.heat-tile-top{display:flex;justify-content:space-between;align-items:center;gap:6px;color:#f4f7ff}
+.heat-tile-top b{font:800 10px Manrope,sans-serif;letter-spacing:.1px}
+.heat-tile-top span{font-size:9px;color:#ffffffa8}
+.heat-tile>strong{font:800 15px Manrope,sans-serif}
+.heat-tile>strong.up{color:#b9ffdf}.heat-tile>strong.down{color:#ffd0d8}
+.heat-tile>small{font-size:8px;color:#ffffffc2;font-variant-numeric:tabular-nums}
+.heatmap-footnote{display:flex;justify-content:space-between;gap:12px;margin-top:13px;color:#7f91aa;font-size:8px}
+@media(max-width:600px){.market-heatmap{padding:14px}.heatmap-heading{flex-direction:column}.heatmap-legend{align-self:flex-start}.heatmap-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.heatmap-footnote{flex-direction:column;gap:5px}}
