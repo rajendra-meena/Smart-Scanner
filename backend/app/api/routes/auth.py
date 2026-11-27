@@ -6,7 +6,7 @@ from fastapi.responses import RedirectResponse
 from kiteconnect import KiteConnect
 from app.api.dependencies import get_current_session
 from app.core.config import settings
-from app.core.market_data import market_data_engine
+from app.core.market_data import market_data_engine, opening_breakout_service
 from app.core.session_store import session_store
 
 router = APIRouter(prefix="/auth", tags=["authentication"])
@@ -55,12 +55,40 @@ def session(current=Depends(get_current_session)):
 def logout(request: Request, response: Response):
     key = request.cookies.get(settings.session_cookie_name)
     current = session_store.delete(key)
-    response.delete_cookie(settings.session_cookie_name, path="/", httponly=True,
-                           secure=settings.session_cookie_secure, samesite="lax")
+
+    response.delete_cookie(
+        settings.session_cookie_name,
+        path="/",
+        httponly=True,
+        secure=settings.session_cookie_secure,
+        samesite="lax",
+    )
+
     if current:
-        market_data_engine.stop(current.access_token)
+        # 1. Stop strategy and clean up pending entries / PAPER positions.
+        try:
+            opening_breakout_service.stop()
+        except Exception:
+            logger.exception(
+                "Opening Breakout cleanup failed during logout"
+            )
+
+        # 2. Stop shared market data feed. Any unresolved Opening Breakout
+        # PAPER positions have already been persisted by stop(); the next
+        # authenticated feed connection restores and resubscribes them.
+        try:
+            market_data_engine.stop(current.access_token)
+        except Exception:
+            logger.exception(
+                "Market data cleanup failed during logout"
+            )
+
+        # 3. Invalidate Kite access token.
         try:
             kite_client(current.access_token).invalidate_access_token()
         except Exception:
-            logger.exception("Kite access token invalidation failed during logout")
-    return {"authenticated":False}
+            logger.exception(
+                "Kite access token invalidation failed during logout"
+            )
+
+    return {"authenticated": False}
