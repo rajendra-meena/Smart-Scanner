@@ -284,3 +284,29 @@ def test_dashboard_snapshot_includes_all_registered_sector_indices():
     assert "NIFTY IT" in snapshot["indices"]
     assert "NIFTY OIL AND GAS" in snapshot["indices"]
     assert "NIFTY AUTO" in snapshot["indices"]
+
+
+
+def test_unrelated_missing_sector_does_not_block_mapped_stock_entry(monkeypatch):
+    engine = MarketRegimeEngine()
+    use_normal_volatility_for_direction_tests(engine, monkeypatch)
+    required_universe = engine.indices_for_symbols(["INFY", "VOLTAS"])
+    engine.register_indices(required_universe)
+    now = datetime(2026, 11, 27, 15, 30, tzinfo=IST)
+    seed_both(engine, now=now)
+    for interval, cadence in (("5minute", 5), ("15minute", 15)):
+        engine.seed_history(
+            "NIFTY IT", interval,
+            candles(start=datetime(2026, 11, 24, 9, 15, tzinfo=IST), interval=cadence),
+            now=now,
+        )
+
+    monkeypatch.setattr(regime_module, "monotonic", lambda: 700.0)
+    for symbol in ("NIFTY 50", "NIFTY BANK", "NIFTY IT"):
+        engine.on_tick({"symbol": symbol, "last_price": 500.0}, now)
+
+    allowed, snapshot = engine.allows("CE", "INFY")
+
+    assert allowed is True
+    assert snapshot["required_indices"] == ["NIFTY 50", "NIFTY BANK", "NIFTY IT"]
+    assert "NIFTY CONSUMER DURABLES" not in snapshot["indices"]
