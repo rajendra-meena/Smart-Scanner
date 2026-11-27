@@ -223,14 +223,14 @@ def volatility_history(current_spike=False):
     rows = []
     start = datetime(2026, 10, 1, 9, 15, tzinfo=IST)
     price = 100.0
+    day = start.date()
     for day_index in range(22):
-        day = start.date() + timedelta(days=day_index)
-        # Skip weekends to model NSE trading sessions.
-        while (start.replace(year=day.year, month=day.month, day=day.day).weekday() >= 5):
+        # Generate 22 distinct NSE-like weekdays.
+        while day.weekday() >= 5:
             day += timedelta(days=1)
         for slot in range(15):
             stamp = datetime.combine(day, datetime.min.time(), tzinfo=IST).replace(hour=9, minute=15) + timedelta(minutes=5 * slot)
-            spike = current_spike and day_index == 21 and slot in (12, 13)
+            spike = current_spike and day_index == 21 and slot in (13, 14)
             width = 15.0 if spike else 0.5
             close = price + 0.1
             rows.append({
@@ -238,6 +238,7 @@ def volatility_history(current_spike=False):
                 "low": min(price, close) - width, "close": close, "volume": 0,
             })
             price = close
+        day += timedelta(days=1)
     current_stamp = rows[-1]["date"] + timedelta(minutes=5)
     current_candle = {
         "date": current_stamp, "open": price, "high": price + 0.1,
