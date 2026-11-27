@@ -343,10 +343,9 @@ class PriceActionService:
                 "direction": signal.get("direction"),
                 "market_regime": regime.get("regime"),
                 "market_volatility": regime.get("volatility", "UNKNOWN"),
-                "reason": (
-                    regime.get("volatility_reason")
-                    if regime.get("volatility") != "NORMAL"
-                    else regime.get("reason")
+                "reason": regime.get(
+                    "entry_block_reason",
+                    regime.get("reason", "Market filter blocked the entry"),
                 ),
             })
             return
