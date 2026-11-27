@@ -559,6 +559,41 @@ def test_start_rejects_stale_market_feed(service_env, monkeypatch):
     assert FakeTimer.instances == []
 
 
+def test_auto_start_starts_paper_once_fresh_ticks_arrive(
+    service_env, monkeypatch
+):
+    service, market_data, _ = service_env
+    prepare_start_environment(service, market_data, monkeypatch)
+    monkeypatch.setattr(service_module, "Timer", FakeTimer)
+    FakeTimer.instances.clear()
+
+    service.on_market_tick([])
+
+    assert service.running is True
+    assert service.mode == "PAPER"
+    assert service._auto_start_attempted_day == NOW.date().isoformat()
+    assert any(event["event"] == "PAPER_STARTED" for event in service.events)
+
+
+def test_manual_stop_suppresses_auto_restart_for_same_day(
+    service_env, monkeypatch
+):
+    service, market_data, _ = service_env
+    prepare_start_environment(service, market_data, monkeypatch)
+    monkeypatch.setattr(service_module, "Timer", FakeTimer)
+    FakeTimer.instances.clear()
+
+    service.on_market_tick([])
+    assert service.running is True
+    service.stop()
+    assert service.running is False
+
+    service.on_market_tick([])
+
+    assert service.running is False
+    assert service._auto_start_suppressed_day == NOW.date().isoformat()
+
+
 def test_start_loads_only_fno_universe_and_starts_timer(
     service_env, monkeypatch
 ):
