@@ -413,10 +413,24 @@ class MarketRegimeEngine:
                 }))
                 age = now - self.last_tick[symbol] if symbol in self.last_tick else None
                 fresh = age is not None and 0 <= age <= self.FRESH_SECONDS
+                five_rows = list(self.candles.get(symbol, {}).get("5minute", []))
+                fifteen_rows = list(self.candles.get(symbol, {}).get("15minute", []))
+                five_sessions = len({row["date"].date() for row in five_rows})
+                fifteen_sessions = len({row["date"].date() for row in fifteen_rows})
+                volatility_state = state.get("volatility", {})
                 indices[symbol] = {
                     **state,
                     "feed_fresh": fresh,
                     "tick_age_seconds": round(age, 2) if age is not None else None,
+                    "history": {
+                        "5minute_candles": len(five_rows),
+                        "5minute_sessions": five_sessions,
+                        "15minute_candles": len(fifteen_rows),
+                        "15minute_sessions": fifteen_sessions,
+                        "atr_baseline_sessions": volatility_state.get("baseline_sessions", 0),
+                        "atr_status": volatility_state.get("status", "UNKNOWN"),
+                        "atr_reason": volatility_state.get("reason", "ATR baseline not evaluated"),
+                    },
                 }
         regimes = [indices[symbol]["regime"] for symbol in required]
         volatilities = [indices[symbol].get("volatility", {}).get("status", "UNKNOWN") for symbol in required]
