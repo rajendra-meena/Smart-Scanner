@@ -39,7 +39,7 @@ class PriceActionEngine:
         current = self.current.get(symbol)
         if current is None:
             baseline = self.last_cumulative_volume.get(symbol, volume)
-            self.current[symbol] = {"minute": minute, "open": price, "high": price, "low": price, "close": price, "volume": max(0, volume - baseline)}
+            self.current[symbol] = {"minute": minute, "open": price, "high": price, "low": price, "close": price, "volume_start": baseline, "volume": max(0, volume - baseline)}
             self.last_cumulative_volume[symbol] = volume
             return None
         if current["minute"] != minute:
@@ -51,9 +51,8 @@ class PriceActionEngine:
         current["high"] = max(current["high"], price)
         current["low"] = min(current["low"], price)
         current["close"] = price
-        baseline = self.last_cumulative_volume.get(symbol, volume)
-        current["volume"] = max(current["volume"], max(0, volume - baseline))
-        self.last_cumulative_volume[symbol] = max(baseline, volume)
+        current["volume"] = max(current["volume"], max(0, volume - current["volume_start"]))
+        self.last_cumulative_volume[symbol] = max(self.last_cumulative_volume.get(symbol, volume), volume)
         return None
 
     def _analyze(self, symbol, candles):
