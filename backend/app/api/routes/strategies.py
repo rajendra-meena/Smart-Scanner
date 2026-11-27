@@ -42,6 +42,33 @@ class ModeRequest(BaseModel):
     mode: str = Field(pattern="^(PAPER|LIVE)$")
 
 
+class PlatformDefaultsRequest(BaseModel):
+    default_mode: str = Field(default="PAPER", pattern="^(PAPER|LIVE)$")
+    auto_start_new_strategies: bool = False
+    default_max_positions: int = Field(default=6, ge=1)
+    default_stop_loss_points: float = Field(default=15, gt=0, le=100)
+    default_exit_time: str = Field(default="15:15:00")
+
+    @field_validator("default_exit_time")
+    @classmethod
+    def validate_default_exit_time(cls, value):
+        try:
+            from datetime import time
+            return time.fromisoformat(value).isoformat(timespec="seconds")
+        except ValueError as exc:
+            raise ValueError("Default exit time must use HH:MM:SS format.") from exc
+
+
+@router.get("/platform/defaults")
+def platform_defaults(current=Depends(get_current_session)):
+    return opening_breakout_service.platform_defaults()
+
+
+@router.put("/platform/defaults")
+def update_platform_defaults(payload: PlatformDefaultsRequest, current=Depends(get_current_session)):
+    return opening_breakout_service.save_platform_defaults(payload.model_dump())
+
+
 @router.get("/settings")
 def settings(current=Depends(get_current_session)):
     return opening_breakout_service.settings()
