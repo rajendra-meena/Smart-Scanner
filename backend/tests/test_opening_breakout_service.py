@@ -1152,7 +1152,7 @@ def test_square_off_never_uses_stale_cached_option_bid(
 
     assert position["status"] == "OPEN"
     assert position["exit_price"] is None
-    assert position["exit_reason"] == "TIME_EXIT_09_30_WAITING_FOR_QUOTE"
+    assert position["exit_reason"] == "TIME_EXIT_09_30"
     assert position.get("pnl") is None
     assert service.engine.stocks["XYZ"].active_position_id == position["id"]
     assert len(store.saved_trades) == 1
