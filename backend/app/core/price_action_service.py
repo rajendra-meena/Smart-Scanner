@@ -186,10 +186,10 @@ class PriceActionService:
             seeded = 0
             for symbol in self.allowed_symbols:
                 seeded += self.engine.seed_history(symbol, historical.get(symbol, []))
-            self.events = [{
+            self.events.append({
                 "time": now.isoformat(), "event": "HISTORICAL_BASELINE_LOADED",
                 "detail": f"{seeded} completed Zerodha one-minute candles loaded across {len(self.allowed_symbols)} stocks"
-            }]
+            })
             # Preserve recovered open positions when manually restarting the strategy.
             # Pending entries are intentionally discarded: they were not filled yet.
             self.pending.clear()
