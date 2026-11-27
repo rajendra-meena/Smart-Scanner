@@ -3,14 +3,16 @@ import {api,type BreakoutStatus,type BreakoutTrade,type BreakoutSettings,type Br
 
 const money=(v:unknown)=>typeof v==="number"?new Intl.NumberFormat("en-IN",{maximumFractionDigits:2}).format(v):"—";
 const time=(v:unknown)=>typeof v==="string"&&v?new Date(v).toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit",second:"2-digit"}):"—";
+const localDate=()=>{const now=new Date();return new Date(now.getTime()-now.getTimezoneOffset()*60000).toISOString().slice(0,10)};
 
 export default function OpeningBreakout(){
  const [status,setStatus]=useState<BreakoutStatus|null>(null),[trades,setTrades]=useState<BreakoutTrade[]>([]);
+ const [tradeDate,setTradeDate]=useState(localDate);
  const [settings,setSettings]=useState<BreakoutSettings|null>(null),[draft,setDraft]=useState<BreakoutConfig|null>(null);
  const [view,setView]=useState<"dashboard"|"settings">("dashboard");
  const [error,setError]=useState(""),[notice,setNotice]=useState(""),[busy,setBusy]=useState(false);
- const refresh=async()=>{try{const [s,t,c]=await Promise.all([api.status(),api.trades(),api.settings()]);setStatus(s);setTrades(t);setSettings(c);setDraft(prev=>prev??c.config)}catch(e){setError(e instanceof Error?e.message:"Unable to load strategy data")}};
- useEffect(()=>{void refresh();const id=window.setInterval(()=>void refresh(),2000);return()=>window.clearInterval(id)},[]);
+ const refresh=async()=>{try{const [s,t,c]=await Promise.all([api.status(),api.trades(tradeDate),api.settings()]);setStatus(s);setTrades(t);setSettings(c);setDraft(prev=>prev??c.config)}catch(e){setError(e instanceof Error?e.message:"Unable to load strategy data")}};
+ useEffect(()=>{void refresh();const id=window.setInterval(()=>void refresh(),2000);return()=>window.clearInterval(id)},[tradeDate]);
  const updateMode=async(mode:"PAPER"|"LIVE")=>{setBusy(true);setError("");setNotice("");try{const result=await api.setMode(mode);setSettings(result);setNotice(mode==="PAPER"?"Paper mode selected and saved.":"Live mode preference saved. Live order execution is not available until broker execution safeguards are implemented.");}catch(e){setError(e instanceof Error?e.message:"Unable to update mode")}finally{setBusy(false)}};
  const save=async()=>{
   if(!draft)return;
@@ -55,7 +57,7 @@ export default function OpeningBreakout(){
    <div className="breakout-watchlist">{status?.watchlist?.length?status.watchlist.map(s=><div className="breakout-watch" key={s.symbol}><b>{s.symbol}</b><span>Open ₹{money(s.opening_price)}</span><span>LTP ₹{money(s.last_price)}</span><strong>{s.signal_stage||s.signal|| (s.traded?"TRADED":s.skipped?"SKIPPED":"SCANNING")}</strong></div>):<div className="empty">No strategy watchlist loaded. Start Paper mode during the permitted market window.</div>}</div>
    <div className="section-head"><h3>Realtime positions</h3><p>Position status and P&amp;L from strategy execution data</p></div>
    {positions.length?<div className="table-scroll"><table className="trade-table"><thead><tr><th>STOCK / CONTRACT</th><th>SIDE</th><th>ENTRY TIME</th><th>ENTRY</th><th>LTP</th><th>STOP LOSS</th><th>QTY</th><th>P&amp;L</th><th>STATUS</th></tr></thead><tbody>{positions.map((p:any)=><tr key={p.id}><td><b>{p.symbol}</b><small>{p.option_symbol||"Option quote pending"}</small></td><td>{p.direction||"—"}</td><td>{time(p.opened_at)}</td><td>₹{money(p.entry_price)}</td><td>₹{money(p.ltp)}</td><td>₹{money(p.stop_price)}</td><td>{p.quantity??"—"}</td><td className={typeof p.pnl==="number"?(p.pnl>=0?"up":"down"):""}>{typeof p.pnl==="number"?"₹"+money(p.pnl):"—"}</td><td>{p.status}</td></tr>)}</tbody></table></div>:<div className="empty">No active or pending positions.</div>}
-   <div className="section-head"><h3>Completed trades</h3><p>Saved strategy trade history</p></div>
+   <div className="section-head completed-trades-heading"><div><h3>Completed trades</h3><p>Saved PAPER strategy trade history for the selected date</p></div><label className="trade-date-filter">Trade date<input type="date" value={tradeDate} max={localDate()} onChange={e=>setTradeDate(e.target.value)}/></label></div>
    {trades.length?<div className="table-scroll"><table className="trade-table"><thead><tr><th>STOCK</th><th>MODE</th><th>ENTRY TIME</th><th>EXIT TIME</th><th>ENTRY</th><th>EXIT</th><th>QTY</th><th>P&amp;L</th><th>EXIT REASON</th></tr></thead><tbody>{trades.map(t=><tr key={t.id}><td><b>{t.symbol}</b><small>{t.option_symbol||t.direction}</small></td><td>{t.mode}</td><td>{time(t.opened_at)}</td><td>{time(t.closed_at)}</td><td>₹{money(t.entry_price)}</td><td>₹{money(t.exit_price)}</td><td>{t.quantity??"—"}</td><td className={typeof t.pnl==="number"?(t.pnl>=0?"up":"down"):""}>{typeof t.pnl==="number"?"₹"+money(t.pnl):"—"}</td><td>{t.exit_reason||"—"}</td></tr>)}</tbody></table></div>:<div className="empty">No completed trades are stored yet.</div>}
    <div className="section-head"><h3>Execution events</h3><p>Strategy signals, option subscriptions and simulated fills</p></div>
    <div className="breakout-trades">{events.length?events.slice().reverse().map((e:any,i:number)=><div className="breakout-trade" key={i}><b>{e.symbol||"STRATEGY"}</b><span>{e.event} {e.direction||""}</span><strong>{e.status||e.reason||"INFO"}</strong><small>{e.detail||e.time}</small></div>):<div className="empty">No execution events recorded.</div>}</div>
