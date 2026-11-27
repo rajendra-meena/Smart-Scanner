@@ -48,6 +48,7 @@ class BreakfastService:
         self.pending = {}
         self.latest_option_quotes = {}
         self.attempted_day = None
+        self.session_day = None
 
     def _event(self, name, **fields):
         self.events.append({"time": datetime.now(IST).isoformat(), "event": name, **fields})
@@ -189,6 +190,18 @@ class BreakfastService:
     def on_market_tick(self, rows):
         now = datetime.now(IST)
         with self.lock:
+            day_key = now.date().isoformat()
+            if self.session_day != day_key:
+                self.session_day = day_key
+                self.first_candles = {}
+                self.selection = None
+                self.attempted_day = None
+                self._event("NEW_TRADING_SESSION", trade_date=day_key)
+            for token, pending in list(self.pending.items()):
+                requested = datetime.fromisoformat(pending["requested_at"])
+                if (now - requested).total_seconds() > 5:
+                    self.pending.pop(token, None)
+                    self._event("PENDING_CANCELLED", symbol=pending["symbol"], reason="OPTION_QUOTE_TIMEOUT")
             for row in rows:
                 self._first_candle_tick(row, now)
             for row in rows:
@@ -215,8 +228,18 @@ class BreakfastService:
         already = len(self.trades(now.date().isoformat()))
         active = sum(p.get("status") == "OPEN" for p in self.positions.values()) + len(self.pending)
         capacity = max(0, min(max_positions - active, max_daily - already - len(self.pending)))
-        for candidate in result["candidates"][:capacity]:
+        active_symbols = {str(p.get("symbol") or "").upper() for p in self.positions.values() if p.get("status") == "OPEN"}
+        active_symbols.update(str(p.get("symbol") or "").upper() for p in self.pending.values())
+        queued = 0
+        for candidate in result["candidates"]:
+            if queued >= capacity:
+                break
+            if candidate["symbol"] in active_symbols:
+                self._event("ENTRY_SKIPPED", symbol=candidate["symbol"], reason="An open or pending position already exists for this stock")
+                continue
             self._queue_option(candidate, now)
+            active_symbols.add(candidate["symbol"])
+            queued += 1
 
     def _monitor_equity_positions(self, rows, now):
         by_symbol = {str(r.get("symbol") or "").upper(): r for r in rows if r.get("instrument_type") == "EQ"}
