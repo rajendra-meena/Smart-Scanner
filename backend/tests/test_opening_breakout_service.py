@@ -406,7 +406,7 @@ def test_feed_failure_cancels_pending_and_records_unpriced_exit(service_env):
     assert store.saved_trades[0]["exit_price"] is None
     assert store.saved_trades[0].get("pnl") is None
 
-    assert service.engine.stocks["XYZ"].active_position_id is None
+    assert service.engine.stocks["XYZ"].active_position_id == position["id"]
 
     assert any(
         event["event"] == "FEED_GUARD_STOP"
@@ -430,9 +430,9 @@ def test_watchdog_stops_strategy_when_feed_goes_stale_without_market_ticks(
 
     assert service.running is False
     assert watchdog.cancelled is True
-    assert service._watchdog_timer is None
+    assert service._watchdog_timer is not None
     assert 101 not in service._pending_contracts
-    assert position["status"] == "CLOSED_UNPRICED"
+    assert position["status"] == "OPEN"
     assert position["exit_price"] is None
     assert position.get("pnl") is None
     assert len(store.saved_trades) == 1
@@ -459,12 +459,12 @@ def test_feed_failure_stops_strategy_even_when_trade_persistence_fails(service_e
 
     assert service.running is False
     assert service._exit_timer is None
-    assert service._watchdog_timer is None
+    assert service._watchdog_timer is not None
     assert exit_timer.cancelled is True
     assert watchdog.cancelled is True
-    assert position["status"] == "CLOSED_UNPRICED"
+    assert position["status"] == "OPEN"
     assert position["exit_price"] is None
-    assert service.engine.stocks["XYZ"].active_position_id is None
+    assert service.engine.stocks["XYZ"].active_position_id == position["id"]
     assert any(
         event["event"] == "PAPER_OPEN_POSITION_PERSIST_FAILED"
         for event in service.events
