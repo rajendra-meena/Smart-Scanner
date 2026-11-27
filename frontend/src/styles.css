@@ -192,3 +192,7 @@ body{background:radial-gradient(ellipse at 50% -28%,#5746a52b,transparent 48%),l
 .trade-table tbody tr:hover{background:#a18bff0b}
 @media(max-width:900px){.settings-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:560px){.settings-grid{grid-template-columns:1fr}.breakout-toolbar{align-items:flex-start;gap:10px;flex-direction:column}}
+
+/* Automatic PAPER start preference */
+.settings-grid label.settings-checkbox{grid-column:1/-1;display:flex;flex-direction:row;align-items:center;gap:10px;padding:12px 14px;border:1px solid #354760;border-radius:10px;background:#101a29;color:#d4def0}
+.settings-grid label.settings-checkbox input{width:16px;height:16px;margin:0;accent-color:#8c78ef}
