@@ -399,7 +399,12 @@ class MarketRegimeEngine:
                     current["close"] = price
 
     def snapshot(self, underlying_symbol=None):
-        required = list(self.REQUIRED_INDICES)
+        # The dashboard snapshot must include every index registered for the
+        # current F&O candidate universe, not only the two broad-market indices.
+        # Per-symbol snapshots still use the same active set plus that symbol's
+        # sector index when needed.
+        with self.lock:
+            required = list(self.active_indices)
         if underlying_symbol:
             sector = self.sector_index_for_symbol(underlying_symbol)
             if sector and sector not in required:
