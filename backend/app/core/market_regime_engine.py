@@ -213,7 +213,7 @@ class MarketRegimeEngine:
         minutes = stamp.hour * 60 + stamp.minute - (9 * 60 + 15)
         return minutes // 5 if 0 <= minutes < 375 else None
 
-    def _volatility_state(self, candles):
+    def _volatility_state(self, candles, current_candle=None):
         """Compare the latest two completed 5m ATR readings with the same
         time-of-day ATR median from the preceding 20 trading sessions.
         Missing baseline data is UNKNOWN and therefore blocks new entries.
@@ -242,8 +242,12 @@ class MarketRegimeEngine:
             }
         first_slot = self._session_slot(latest_two[0]["date"])
         second_slot = self._session_slot(latest_two[1]["date"])
+        current_session = current_candle.get("date").date() if current_candle else None
         if (
-            latest_two[0]["date"].date() != latest_two[1]["date"].date()
+            current_session is None
+            or latest_two[0]["date"].date() != current_session
+            or latest_two[1]["date"].date() != current_session
+            or latest_two[0]["date"].date() != latest_two[1]["date"].date()
             or first_slot is None or second_slot != first_slot + 1
         ):
             return {
@@ -334,7 +338,10 @@ class MarketRegimeEngine:
     def _refresh_state(self, symbol):
         five = self._timeframe_state(self.candles[symbol]["5minute"])
         fifteen = self._timeframe_state(self.candles[symbol]["15minute"])
-        volatility = self._volatility_state(self.candles[symbol]["5minute"])
+        volatility = self._volatility_state(
+            self.candles[symbol]["5minute"],
+            self.current[symbol].get("5minute"),
+        )
         regime = "UNKNOWN"
         reason = "Both 5m and 15m index trends must be available and aligned"
         if "SIDEWAYS" in (five["direction"], fifteen["direction"]):
