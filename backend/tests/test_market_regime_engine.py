@@ -100,3 +100,106 @@ def test_seed_history_ignores_incomplete_current_candle():
 
     seeded = engine.seed_history("NIFTY 50", "5minute", rows, now=now)
     assert seeded == 9
+
+
+
+def test_sector_index_is_required_for_a_stock_entry(monkeypatch):
+    engine = MarketRegimeEngine()
+    required = engine.indices_for_symbols(["INFY"])
+    assert required == ["NIFTY 50", "NIFTY BANK", "NIFTY IT"]
+    engine.register_indices(required)
+    seed_both(engine)
+    now = datetime(2026, 11, 27, 15, 30, tzinfo=IST)
+    sector_history = candles(
+        start=datetime(2026, 11, 24, 9, 15, tzinfo=IST),
+        interval=5,
+    )
+    engine.seed_history("NIFTY IT", "5minute", sector_history, now=now)
+    engine.seed_history(
+        "NIFTY IT", "15minute",
+        candles(start=datetime(2026, 11, 24, 9, 15, tzinfo=IST), interval=15),
+        now=now,
+    )
+    monkeypatch.setattr(regime_module, "monotonic", lambda: 300.0)
+    for symbol in required:
+        engine.on_tick({"symbol": symbol, "last_price": 500.0}, now)
+
+    allowed, snapshot = engine.allows("CE", "INFY")
+    assert allowed is True
+    assert snapshot["required_indices"] == required
+    assert snapshot["indices"]["NIFTY IT"]["feed_fresh"] is True
+
+
+def test_sector_index_opposite_direction_blocks_stock_entry(monkeypatch):
+    engine = MarketRegimeEngine()
+    required = engine.indices_for_symbols(["INFY"])
+    engine.register_indices(required)
+    now = datetime(2026, 11, 27, 15, 30, tzinfo=IST)
+    bullish = candles()
+    bearish = candles(trend=-1.0)
+    for symbol in ("NIFTY 50", "NIFTY BANK"):
+        engine.seed_history(symbol, "5minute", bullish, now=now)
+        engine.seed_history(
+            symbol, "15minute",
+            candles(start=datetime(2026, 11, 24, 9, 15, tzinfo=IST), interval=15),
+            now=now,
+        )
+    engine.seed_history("NIFTY IT", "5minute", bearish, now=now)
+    engine.seed_history(
+        "NIFTY IT", "15minute",
+        candles(trend=-1.0, start=datetime(2026, 11, 24, 9, 15, tzinfo=IST), interval=15),
+        now=now,
+    )
+    monkeypatch.setattr(regime_module, "monotonic", lambda: 400.0)
+    for symbol in required:
+        engine.on_tick({"symbol": symbol, "last_price": 500.0}, now)
+
+    allowed, snapshot = engine.allows("CE", "INFY")
+    assert snapshot["regime"] == "MIXED"
+    assert allowed is False
+
+
+def test_unmapped_underlying_fails_closed():
+    engine = MarketRegimeEngine()
+    allowed, snapshot = engine.allows("CE", "UNMAPPED_STOCK")
+    assert allowed is False
+    assert snapshot["regime"] == "UNKNOWN"
+    assert "No approved sector-index mapping" in snapshot["reason"]
+
+
+def test_sideways_required_sector_index_blocks_entry(monkeypatch):
+    engine = MarketRegimeEngine()
+    required = engine.indices_for_symbols(["INFY"])
+    engine.register_indices(required)
+    now = datetime(2026, 11, 27, 15, 30, tzinfo=IST)
+    bullish = candles()
+    for symbol in ("NIFTY 50", "NIFTY BANK"):
+        engine.seed_history(symbol, "5minute", bullish, now=now)
+        engine.seed_history(
+            symbol, "15minute",
+            candles(start=datetime(2026, 11, 24, 9, 15, tzinfo=IST), interval=15),
+            now=now,
+        )
+    # A flat range produces ADX below the sideways threshold.
+    flat = []
+    start = datetime(2026, 11, 24, 9, 15, tzinfo=IST)
+    for index in range(80):
+        stamp = start + timedelta(minutes=5 * index)
+        flat.append({
+            "date": stamp, "open": 100.0, "high": 100.1,
+            "low": 99.9, "close": 100.0, "volume": 0,
+        })
+    engine.seed_history("NIFTY IT", "5minute", flat, now=now)
+    engine.seed_history(
+        "NIFTY IT", "15minute",
+        [dict(row, date=start + timedelta(minutes=15 * index))
+         for index, row in enumerate(flat)],
+        now=now,
+    )
+    monkeypatch.setattr(regime_module, "monotonic", lambda: 500.0)
+    for symbol in required:
+        engine.on_tick({"symbol": symbol, "last_price": 500.0}, now)
+
+    allowed, snapshot = engine.allows("CE", "INFY")
+    assert snapshot["regime"] == "SIDEWAYS"
+    assert allowed is False
