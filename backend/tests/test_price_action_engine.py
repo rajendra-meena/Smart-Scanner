@@ -9,7 +9,7 @@ IST = ZoneInfo("Asia/Kolkata")
 def bullish_sweep_candles():
     start = datetime(2026, 11, 27, 9, 20, tzinfo=IST)
     rows = []
-    for index in range(7):
+    for index in range(8):
         rows.append({
             "minute": start + timedelta(minutes=index),
             "open": 99.5 + index * 0.15,
@@ -19,7 +19,7 @@ def bullish_sweep_candles():
             "volume": 100,
         })
     rows[-1] = {
-        "minute": start + timedelta(minutes=7),
+        "minute": start + timedelta(minutes=8),
         "open": 99.8,
         "high": 100.8,
         "low": 97.5,
