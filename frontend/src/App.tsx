@@ -111,7 +111,7 @@ function MarketHeatmap({rows}:{rows:MarketRow[]}){
    const positive=row.change_percent>=0;
    const intensity=Math.min(1,Math.abs(row.change_percent)/maxMove);
    const alpha=(0.16+intensity*0.42).toFixed(2);
-   const background=positive?`rgba(22, 163, 112, ${alpha})`:`rgba(210, 65, 91, ${alpha})`;
+   const background=positive?`rgba(104, 115, 71, ${alpha})`:`rgba(174, 91, 84, ${alpha})`;
    return <div className="heat-tile" key={row.instrument_token} style={{backgroundColor:background}} title={`${row.symbol}: ${pct(row.change_percent)} · LTP ₹${money(row.last_price)}`}>
     <div className="heat-tile-top"><b>{row.symbol}</b><span>{positive?"▲":"▼"}</span></div>
     <strong className={positive?"up":"down"}>{pct(row.change_percent)}</strong>
