@@ -1,7 +1,7 @@
 """Independent PAPER-only Breakfast Strategy lifecycle."""
 import json
 import sqlite3
-from datetime import datetime, time
+from datetime import datetime, time, timedelta
 from pathlib import Path
 from threading import RLock
 from uuid import uuid4
@@ -97,8 +97,10 @@ class BreakfastService:
                 raise RuntimeError("Breakfast Strategy is already running.")
             if not self.market_data.is_feed_fresh(5):
                 raise RuntimeError("Zerodha feed is not fresh.")
-            if now.time() < time(9, 20) or now.time() >= time.fromisoformat(self.config["exit_time"]):
-                raise RuntimeError("Start is allowed from 09:20 IST until configured exit time.")
+            entry_at = datetime.combine(now.date(), time.fromisoformat(self.config["entry_time"]), tzinfo=IST)
+            start_deadline = entry_at + timedelta(minutes=1)
+            if now < datetime.combine(now.date(), time(9, 20), tzinfo=IST) or now > start_deadline or now.time() >= time.fromisoformat(self.config["exit_time"]):
+                raise RuntimeError("Start is allowed from 09:20 IST until one minute after the configured entry time.")
             self.running = True
             self._event("PAPER_STARTED", detail="Collecting first 5-minute candle and waiting for the configured entry time")
             return self.snapshot()
@@ -207,7 +209,7 @@ class BreakfastService:
             for row in rows:
                 if row.get("instrument_type") in ("CE", "PE"):
                     self._on_option_tick(row, now)
-            if self.config["enabled"] and self.config["auto_start"] and not self.running and self.attempted_day != now.date().isoformat() and time(9, 20) <= now.time() < time(9, 30):
+            if self.config["enabled"] and self.config["auto_start"] and not self.running and self.attempted_day != now.date().isoformat() and datetime.combine(now.date(), time(9, 20), tzinfo=IST) <= now <= datetime.combine(now.date(), time.fromisoformat(self.config["entry_time"]), tzinfo=IST) + timedelta(minutes=1):
                 self.attempted_day = now.date().isoformat()
                 try:
                     self.start()
