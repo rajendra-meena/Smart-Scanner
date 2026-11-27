@@ -364,4 +364,4 @@ class PriceActionService:
         return [json.loads(r[0]) for r in rows]
 
     def snapshot(self):
-        return {"running":self.running,"mode":"PAPER","enabled":self.config["enabled"],"market_data_ready":self.market_data.is_feed_fresh(5),"watchlist":self.engine.snapshot(),"positions":list(self.positions.values()),"open_positions":sum(p["status"]=="OPEN" for p in self.positions.values()),"trades_count":len(self.trades(datetime.now(IST).date().isoformat())),"trades":self.trades(datetime.now(IST).date().isoformat()),"events":self.events[-100:]}
+        return {"running":self.running,"mode":"PAPER","enabled":self.config["enabled"],"market_data_ready":self.market_data.is_feed_fresh(5),"watchlist":self.engine.snapshot(),"positions":list(self.positions.values()),"open_positions":sum(p["status"]=="OPEN" for p in self.positions.values()),"open_pnl":round(sum(float(p.get("pnl") or 0) for p in self.positions.values() if p.get("status")=="OPEN" and p.get("pnl") is not None),2),"trades_count":len(self.trades(datetime.now(IST).date().isoformat())),"trades":self.trades(datetime.now(IST).date().isoformat()),"events":self.events[-100:]}
