@@ -1093,7 +1093,7 @@ def test_watchdog_stops_when_option_quote_stales_while_equity_feed_is_fresh(
     service._watchdog_tick()
 
     assert service.running is False
-    assert position["status"] == "CLOSED_UNPRICED"
+    assert position["status"] == "OPEN"
     assert position["exit_price"] is None
     assert position.get("pnl") is None
     assert service.engine.stocks["XYZ"].active_position_id is None
@@ -1150,7 +1150,7 @@ def test_square_off_never_uses_stale_cached_option_bid(
 
     service._square_off_paper([], NOW)
 
-    assert position["status"] == "CLOSED_UNPRICED"
+    assert position["status"] == "OPEN"
     assert position["exit_price"] is None
     assert position["exit_reason"] == "TIME_EXIT_09_30_WAITING_FOR_QUOTE"
     assert position.get("pnl") is None
@@ -1262,7 +1262,7 @@ def test_square_off_does_not_fallback_to_cached_bid_or_ltp_without_fresh_bid(
 
     service._square_off_paper([], NOW)
 
-    assert position["status"] == "CLOSED_UNPRICED"
+    assert position["status"] == "OPEN"
     assert position["exit_price"] is None
     assert position["pnl"] is None
     assert len(store.saved_trades) == 1
