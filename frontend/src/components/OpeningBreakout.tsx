@@ -18,7 +18,7 @@ export default function OpeningBreakout(){
   if(!Number.isInteger(draft.gainers_count)||draft.gainers_count<1||draft.gainers_count>20)validation.push("Top gainers count must be between 1 and 20.");
   if(!Number.isInteger(draft.losers_count)||draft.losers_count<1||draft.losers_count>20)validation.push("Top losers count must be between 1 and 20.");
   if(!Number.isFinite(draft.stop_loss_points)||draft.stop_loss_points<=0||draft.stop_loss_points>100)validation.push("Stop loss must be greater than 0 and at most 100 points.");
-  if(!Number.isInteger(draft.max_positions)||draft.max_positions<1||draft.max_positions>6)validation.push("Maximum open positions must be between 1 and 6.");
+  if(!Number.isInteger(draft.max_positions)||draft.max_positions<1)validation.push("Maximum open positions must be a whole number of at least 1.");
   if(!Number.isFinite(draft.max_spread_percent)||draft.max_spread_percent<=0||draft.max_spread_percent>10)validation.push("Maximum bid/ask spread must be greater than 0 and at most 10%.");
   if(!/^([01]\d|2[0-3]):[0-5]\d:[0-5]\d$/.test(draft.exit_time)||draft.exit_time<="09:15:30")validation.push("Exit time must be later than 09:15:30 IST and use HH:MM:SS.");
   if(validation.length){setError(validation.join(" "));setNotice("");return;}
@@ -40,7 +40,7 @@ export default function OpeningBreakout(){
      <label>Top gainers count<input type="number" min="1" max="20" value={draft.gainers_count} onChange={e=>setField("gainers_count",Number(e.target.value))}/></label>
      <label>Top losers count<input type="number" min="1" max="20" value={draft.losers_count} onChange={e=>setField("losers_count",Number(e.target.value))}/></label>
      <label>Stop loss (premium points)<input type="number" min="0.05" max="100" step="0.05" value={draft.stop_loss_points} onChange={e=>setField("stop_loss_points",Number(e.target.value))}/></label>
-     <label>Maximum open positions<input type="number" min="1" max="6" value={draft.max_positions} onChange={e=>setField("max_positions",Number(e.target.value))}/></label>
+     <label>Maximum open positions<input type="number" min="1" step="1" value={draft.max_positions} onChange={e=>setField("max_positions",Number(e.target.value))}/></label>
      <label>Maximum bid/ask spread (%)<input type="number" min="0.01" max="10" step="0.05" value={draft.max_spread_percent} onChange={e=>setField("max_spread_percent",Number(e.target.value))}/></label>
      <label>Strategy exit time (IST)<input type="time" step="1" value={draft.exit_time} onChange={e=>setField("exit_time",e.target.value)}/></label>
     </div><p className="settings-note">Changes take effect the next time you start the strategy. Target is not configured by this strategy.</p>
