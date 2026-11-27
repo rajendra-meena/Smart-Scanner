@@ -1,0 +1,198 @@
+"""Paper-only F&O options execution for the independent Price Action strategy."""
+import json
+import sqlite3
+from datetime import datetime, time
+from pathlib import Path
+from threading import RLock, Timer
+from uuid import uuid4
+from zoneinfo import ZoneInfo
+
+from .price_action_engine import PriceActionEngine
+
+IST = ZoneInfo("Asia/Kolkata")
+
+
+class PriceActionService:
+    DEFAULTS = {
+        "enabled": True, "auto_start": True, "mode": "PAPER",
+        "max_positions": 3, "max_trades_per_day": 5,
+        "stop_loss_points": 15.0, "risk_reward": 2.0,
+        "max_spread_percent": 1.0, "volume_filter": False,
+        "volume_multiplier": 1.2, "exit_time": "15:15:00",
+        "max_daily_loss": 1500.0, "gainers_count": 20, "losers_count": 20,
+    }
+
+    def __init__(self, market_data):
+        self.market_data = market_data
+        self.lock = RLock()
+        self.db_path = Path("./data/price_action_trades.sqlite3")
+        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        with sqlite3.connect(self.db_path) as db:
+            db.execute("CREATE TABLE IF NOT EXISTS price_action_trades (id TEXT PRIMARY KEY, trade_date TEXT NOT NULL, payload TEXT NOT NULL)")
+            db.execute("CREATE TABLE IF NOT EXISTS price_action_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+        with sqlite3.connect(self.db_path) as db:
+            saved = {k: json.loads(v) for k, v in db.execute("SELECT key,value FROM price_action_settings")}
+        self.config = {**self.DEFAULTS, **saved}
+        self.engine = PriceActionEngine(self.config)
+        self.running = False
+        self.positions = {}
+        self.pending = {}
+        self.option_meta = {}
+        self.events = []
+        self.started_day = None
+        self._squareoff_timer = None
+        self._attempted_day = None
+
+    def save_settings(self, values):
+        with self.lock:
+            if self.running:
+                raise RuntimeError("Stop Price Action Intraday before changing settings.")
+            self.config.update(values)
+            self.engine.config = self.config
+            with sqlite3.connect(self.db_path) as db:
+                db.executemany("INSERT INTO price_action_settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", [(k,json.dumps(v)) for k,v in values.items()])
+            return self.settings()
+
+    def settings(self):
+        return {"config": dict(self.config), "live_ready": False, "mode": "PAPER", "live_block_reason": "This strategy supports PAPER simulation only. Broker order placement is not implemented."}
+
+    def start(self):
+        with self.lock:
+            if not self.config["enabled"]:
+                raise RuntimeError("Price Action Intraday is disabled.")
+            if self.running:
+                raise RuntimeError("Price Action Intraday is already running.")
+            now = datetime.now(IST)
+            exit_time = time.fromisoformat(self.config["exit_time"])
+            if now.time() < time(9, 20) or now.time() >= exit_time:
+                raise RuntimeError("Start is allowed between 09:20 IST and configured exit time.")
+            if not self.market_data.is_feed_fresh(5):
+                raise RuntimeError("Zerodha feed is not fresh.")
+            self.running = True
+            self.started_day = now.date().isoformat()
+            self.engine.reset()
+            self.positions.clear()
+            self.pending.clear()
+            self.option_meta.clear()
+            self.events = [{"time": now.isoformat(), "event": "PAPER_STARTED", "detail": "Price Action Intraday started from live Zerodha ticks"}]
+            seconds = max(0, (datetime.combine(now.date(), exit_time, tzinfo=IST)-now).total_seconds())
+            self._squareoff_timer = Timer(seconds, self.stop)
+            self._squareoff_timer.daemon = True
+            self._squareoff_timer.start()
+            return self.snapshot()
+
+    def stop(self):
+        with self.lock:
+            now = datetime.now(IST)
+            for token, item in list(self.pending.items()):
+                self.pending.pop(token, None)
+                self.events.append({"time": now.isoformat(), "event": "PENDING_CANCELLED", "symbol": item["symbol"], "reason": "STRATEGY_STOP"})
+            for pos in list(self.positions.values()):
+                if pos["status"] == "OPEN":
+                    tick = self.market_data.snapshot()
+                    option = next((r for r in tick.get("all_futures", []) if r.get("instrument_token")==pos["token"]), None)
+                    if option:
+                        self._close(pos, float(option.get("last_price") or pos["entry_price"]), "MANUAL_OR_TIME_EXIT", now)
+                    else:
+                        self._close(pos, None, "EXIT_UNPRICED", now)
+            self.running = False
+            if self._squareoff_timer:
+                self._squareoff_timer.cancel()
+                self._squareoff_timer = None
+            self.events.append({"time": now.isoformat(), "event": "PAPER_STOPPED"})
+            return self.snapshot()
+
+    def on_market_tick(self, rows):
+        now = datetime.now(IST)
+        with self.lock:
+            if not self.config["enabled"]:
+                return
+            if not self.running and self.config["auto_start"] and self.config["mode"] == "PAPER" and time(9,20) <= now.time() < time.fromisoformat(self.config["exit_time"]) and self._attempted_day != now.date().isoformat():
+                self._attempted_day = now.date().isoformat()
+                try:
+                    self.start()
+                except RuntimeError as exc:
+                    self.events.append({"time":now.isoformat(),"event":"AUTO_START_FAILED","reason":str(exc)})
+            if not self.running:
+                return
+            if not self.market_data.is_feed_fresh(5) or now.date().isoformat() != self.started_day:
+                self.stop()
+                return
+            for row in rows:
+                kind = row.get("instrument_type")
+                if kind in ("CE","PE"):
+                    self._on_option_tick(row, now)
+                elif kind == "EQ":
+                    signal = self.engine.on_tick(row, now)
+                    if signal:
+                        self._queue_option(signal, now)
+
+    def _queue_option(self, signal, now):
+        open_count = sum(p["status"]=="OPEN" for p in self.positions.values()) + len(self.pending)
+        trades_today = len(self.trades(now.date().isoformat()))
+        if open_count >= int(self.config["max_positions"]) or trades_today + len(self.pending) >= int(self.config["max_trades_per_day"]):
+            self.events.append({"time":now.isoformat(),"event":"SIGNAL_SKIPPED","symbol":signal["symbol"],"reason":"Position or daily trade limit reached"})
+            return
+        if sum(float(p.get("pnl") or 0) for p in self.positions.values() if p["status"]=="CLOSED") <= -abs(float(self.config["max_daily_loss"])):
+            self.events.append({"time":now.isoformat(),"event":"SIGNAL_SKIPPED","symbol":signal["symbol"],"reason":"Maximum daily loss reached"})
+            return
+        options = [r for r in self.market_data.option_instruments(signal["symbol"]) if r.get("instrument_type")==signal["direction"] and r.get("expiry") and r["expiry"] >= now.date().isoformat()]
+        if not options:
+            self.events.append({"time":now.isoformat(),"event":"SIGNAL_SKIPPED","symbol":signal["symbol"],"reason":"No current option contract"})
+            return
+        expiry = min(r["expiry"] for r in options)
+        chain = [r for r in options if r["expiry"]==expiry]
+        contract = min(chain,key=lambda r:abs(float(r.get("strike") or 0)-signal["underlying_price"]))
+        token = int(contract["instrument_token"])
+        if not self.market_data.subscribe_extra([token], full=True):
+            self.events.append({"time":now.isoformat(),"event":"SIGNAL_SKIPPED","symbol":signal["symbol"],"reason":"Option subscription failed"})
+            return
+        self.pending[token] = {**signal,"token":token,"option_symbol":contract["tradingsymbol"],"lot_size":int(contract.get("lot_size") or 0),"requested_at":now.isoformat()}
+        self.option_meta[token] = contract
+        self.events.append({"time":now.isoformat(),"event":"PRICE_ACTION_SIGNAL","symbol":signal["symbol"],"direction":signal["direction"],"reasons":signal["reasons"],"option":contract["tradingsymbol"]})
+
+    def _on_option_tick(self, row, now):
+        token = int(row["instrument_token"])
+        item = self.pending.get(token)
+        depth = row.get("depth") or {}
+        bids, asks = depth.get("buy") or [], depth.get("sell") or []
+        bid = float(bids[0].get("price") or 0) if bids else 0
+        ask = float(asks[0].get("price") or 0) if asks else 0
+        if bid <= 0 or ask <= 0 or ask < bid:
+            return
+        spread = (ask-bid)/((ask+bid)/2)*100
+        if spread > float(self.config["max_spread_percent"]):
+            return
+        if item:
+            qty = int(item["lot_size"])
+            if qty <= 0:
+                self.pending.pop(token,None); return
+            entry = ask
+            sl = entry-float(self.config["stop_loss_points"])
+            target = entry+float(self.config["stop_loss_points"])*float(self.config["risk_reward"])
+            pos = {"id":str(uuid4()),"strategy":"PRICE_ACTION_INTRADAY","symbol":item["symbol"],"option_symbol":item["option_symbol"],"direction":item["direction"],"mode":"PAPER","status":"OPEN","token":token,"quantity":qty,"entry_price":entry,"stop_price":sl,"target_price":target,"ltp":float(row.get("last_price") or ask),"bid":bid,"ask":ask,"opened_at":now.isoformat(),"signal_reasons":item["reasons"],"pnl":0.0}
+            self.positions[pos["id"]]=pos
+            self.pending.pop(token,None)
+            self.events.append({"time":now.isoformat(),"event":"PAPER_ENTRY","symbol":item["symbol"],"option":item["option_symbol"],"entry":entry,"stop":sl,"target":target,"quantity":qty})
+            return
+        pos = next((p for p in self.positions.values() if p["token"]==token and p["status"]=="OPEN"),None)
+        if not pos:return
+        pos.update(ltp=float(row.get("last_price") or 0),bid=bid,ask=ask,pnl=round((bid-pos["entry_price"])*pos["quantity"],2))
+        if bid <= pos["stop_price"]: self._close(pos,bid,"STOP_LOSS",now)
+        elif bid >= pos["target_price"]: self._close(pos,bid,"TARGET",now)
+
+    def _close(self,pos,price,reason,now):
+        if pos["status"]!="OPEN":return
+        pos.update(status="CLOSED" if price is not None else "CLOSED_UNPRICED",exit_price=price,exit_reason=reason,closed_at=now.isoformat(),pnl=round((price-pos["entry_price"])*pos["quantity"],2) if price is not None else None)
+        trade={**pos,"trade_date":now.date().isoformat()}
+        with sqlite3.connect(self.db_path) as db:db.execute("INSERT OR REPLACE INTO price_action_trades VALUES(?,?,?)",(pos["id"],trade["trade_date"],json.dumps(trade,default=str)))
+        self.events.append({"time":now.isoformat(),"event":"PAPER_EXIT","symbol":pos["symbol"],"reason":reason,"pnl":pos["pnl"]})
+
+    def trades(self, trade_date=None):
+        with sqlite3.connect(self.db_path) as db:
+            if trade_date: rows=db.execute("SELECT payload FROM price_action_trades WHERE trade_date=? ORDER BY rowid DESC",(trade_date,)).fetchall()
+            else: rows=db.execute("SELECT payload FROM price_action_trades ORDER BY rowid DESC LIMIT 200").fetchall()
+        return [json.loads(r[0]) for r in rows]
+
+    def snapshot(self):
+        return {"running":self.running,"mode":"PAPER","enabled":self.config["enabled"],"market_data_ready":self.market_data.is_feed_fresh(5),"watchlist":self.engine.snapshot(),"positions":list(self.positions.values()),"open_positions":sum(p["status"]=="OPEN" for p in self.positions.values()),"trades_count":len(self.trades(datetime.now(IST).date().isoformat())),"trades":self.trades(datetime.now(IST).date().isoformat()),"events":self.events[-100:]}
