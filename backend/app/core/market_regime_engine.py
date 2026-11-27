@@ -240,6 +240,20 @@ class MarketRegimeEngine:
                 "baseline_sessions": 0,
                 "confirmation_candles": self.HIGH_VOLATILITY_CONFIRMATION_CANDLES,
             }
+        first_slot = self._session_slot(latest_two[0]["date"])
+        second_slot = self._session_slot(latest_two[1]["date"])
+        if (
+            latest_two[0]["date"].date() != latest_two[1]["date"].date()
+            or first_slot is None or second_slot != first_slot + 1
+        ):
+            return {
+                "status": "UNKNOWN",
+                "reason": "Waiting for two consecutive completed 5-minute candles in the current session",
+                "atr": None, "baseline_atr": None, "ratio": None,
+                "multiplier": self.HIGH_VOLATILITY_MULTIPLIER,
+                "baseline_sessions": 0,
+                "confirmation_candles": self.HIGH_VOLATILITY_CONFIRMATION_CANDLES,
+            }
 
         ratios = []
         latest_atr = baseline_atr = None
