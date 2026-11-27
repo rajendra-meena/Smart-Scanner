@@ -40,6 +40,7 @@ class MarketDataEngine:
         self._fno_symbols: set[str] = set()
         self._option_instruments: list[dict[str, Any]] = []
         self._full_mode_tokens: set[int] = set()
+        self._last_index_history_diagnostics: dict[str, dict[str, Any]] = {}
 
     def _set_status(self, status: str, error: str | None = None):
         with self._lock:
@@ -352,24 +353,46 @@ class MarketDataEngine:
             for row in index_rows
         }
         result = {}
+        diagnostics = {}
         for symbol in sorted(set(str(value).strip().upper() for value in symbols)):
             token = token_by_symbol.get(symbol)
             if token is None:
                 result[symbol] = []
+                diagnostics[symbol] = {
+                    "status": "MISSING_INSTRUMENT",
+                    "error": f"{symbol} was not found in Zerodha NSE INDICES instrument master",
+                    "candle_count": 0,
+                }
                 continue
             try:
-                result[symbol] = kite.historical_data(
-                    token, start_at, end_at, interval
-                )
-            except Exception:
+                rows = kite.historical_data(token, start_at, end_at, interval)
+                result[symbol] = rows
+                diagnostics[symbol] = {
+                    "status": "LOADED" if rows else "EMPTY",
+                    "error": None if rows else "Zerodha returned no candles",
+                    "candle_count": len(rows),
+                }
+            except Exception as exc:
                 logger.exception(
                     "Historical %s candles unavailable for index %s",
                     interval, symbol,
                 )
                 result[symbol] = []
+                diagnostics[symbol] = {
+                    "status": "FETCH_ERROR",
+                    "error": f"{type(exc).__name__}: {exc}",
+                    "candle_count": 0,
+                }
             # Pace requests to avoid bursting Zerodha's historical endpoint.
             clock.sleep(0.35)
+        with self._lock:
+            for symbol, diagnostic in diagnostics.items():
+                self._last_index_history_diagnostics[f"{symbol}:{interval}"] = diagnostic
         return result
+
+    def index_history_diagnostics(self):
+        with self._lock:
+            return {key: dict(value) for key, value in self._last_index_history_diagnostics.items()}
 
     def universe_symbols(self):
         with self._lock:
