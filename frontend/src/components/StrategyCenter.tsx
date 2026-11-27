@@ -6,7 +6,7 @@ const today=()=>{const now=new Date();return new Date(now.getTime()-now.getTimez
 const money=(v:unknown)=>typeof v==="number"?new Intl.NumberFormat("en-IN",{maximumFractionDigits:2}).format(v):"—";
 const time=(v:unknown)=>typeof v==="string"&&v?new Date(v).toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit",second:"2-digit"}):"—";
 
-export default function StrategyCenter({onOpenBreakout}:{onOpenBreakout:()=>void}){
+export default function StrategyCenter({onOpenBreakout,onOpenPriceAction}:{onOpenBreakout:()=>void;onOpenPriceAction:()=>void}){
  const [tab,setTab]=useState<"strategies"|"orders"|"defaults">("strategies");
  const [settings,setSettings]=useState<BreakoutSettings|null>(null);
  const [status,setStatus]=useState<BreakoutStatus|null>(null);
@@ -28,14 +28,19 @@ export default function StrategyCenter({onOpenBreakout}:{onOpenBreakout:()=>void
   </nav>
   {error&&<div className="alert">{error}</div>}{notice&&<div className="strategy-notice"><CheckCircle2 size={15}/>{notice}</div>}
   {tab==="strategies"&&<>
-   <div className="strategy-center-intro"><div><span className="overview-card-label">STRATEGY REGISTRY</span><h3>Your trading strategies</h3><p>Each strategy keeps its own parameters. Enabling a strategy does not bypass its individual risk checks.</p></div><div className="strategy-count"><strong>1</strong><small>Registered strategy</small></div></div>
+   <div className="strategy-center-intro"><div><span className="overview-card-label">STRATEGY REGISTRY</span><h3>Your trading strategies</h3><p>Each strategy keeps its own parameters. Enabling a strategy does not bypass its individual risk checks.</p></div><div className="strategy-count"><strong>2</strong><small>Registered strategies</small></div></div>
    <article className="strategy-registry-card">
     <div className="strategy-registry-icon"><ActivityIcon/></div>
     <div className="strategy-registry-main"><div className="strategy-registry-title"><h3>Opening Price Breakout</h3><span className={settings?.config.enabled?"strategy-state enabled":"strategy-state disabled"}>{settings?.config.enabled?"ENABLED":"DISABLED"}</span><span className={status?.running?"strategy-state running":"strategy-state stopped"}>{status?.running?"RUNNING":"STOPPED"}</span></div><p>Opening range reversal · F&amp;O stocks · ATM CE/PE · {settings?.mode||"PAPER"} mode</p><div className="strategy-mini-stats"><span>Gainers <b>{settings?.config.gainers_count??"—"}</b></span><span>Losers <b>{settings?.config.losers_count??"—"}</b></span><span>Max positions <b>{settings?.config.max_positions??"—"}</b></span><span>Stop loss <b>{settings?.config.stop_loss_points??"—"} pts</b></span></div></div>
     <div className="strategy-registry-actions"><button className={settings?.config.enabled?"secondary-action":"primary"} disabled={busy||!!status?.running||!settings} onClick={()=>void toggleStrategy()}>{settings?.config.enabled?<><PauseCircle size={14}/> Disable</>:<><PlayCircle size={14}/> Enable</>}</button><button className="subtle-button" onClick={onOpenBreakout}><Settings2 size={14}/> Configure <ArrowRight size={13}/></button></div>
    </article>
+   <article className="strategy-registry-card price-action-registry-card">
+    <div className="strategy-registry-icon"><span className="strategy-activity-mark">⌁</span></div>
+    <div className="strategy-registry-main"><div className="strategy-registry-title"><h3>Price Action Intraday</h3><span className="strategy-state enabled">ENABLED</span><span className="strategy-state stopped">PAPER READY</span></div><p>Market Structure · Supply / Demand · Candlestick Context · Liquidity Sweeps · F&amp;O ATM CE/PE</p><div className="strategy-mini-stats"><span>Max positions <b>3</b></span><span>Daily trades <b>5</b></span><span>Risk / Reward <b>1:2</b></span><span>Volume filter <b>Optional</b></span></div></div>
+    <div className="strategy-registry-actions"><button className="subtle-button" onClick={onOpenPriceAction}><Settings2 size={14}/> Open Dashboard <ArrowRight size={13}/></button></div>
+   </article>
    <div className="strategy-safety-note"><ShieldCheck size={17}/><div><b>Live execution remains safety-gated</b><p>Strategy mode preferences do not enable broker order placement. Paper is the active supported execution path until order placement, protective SL, partial fills and broker reconciliation are fully verified.</p></div></div>
-   <div className="future-strategy-panel"><div><h3>Future strategies</h3><p>New strategies will appear here when their actual strategy modules are implemented and registered.</p></div><span>0 additional strategies</span></div>
+   <div className="future-strategy-panel"><div><h3>Future strategies</h3><p>New strategies will appear here when their actual strategy modules are implemented and registered.</p></div><span>Future strategies can be registered here</span></div>
   </>}
   {tab==="orders"&&<>
    <div className="orders-overview-stats"><div><small>OPEN POSITIONS</small><strong>{status?.open_positions??0}</strong></div><div><small>TRADES TODAY</small><strong>{status?.trades_count??0}</strong></div><div><small>ACTIVE STRATEGIES</small><strong>{status?.running?1:0}</strong></div><div><small>EXECUTION MODE</small><strong>{settings?.mode||"PAPER"}</strong></div></div>
