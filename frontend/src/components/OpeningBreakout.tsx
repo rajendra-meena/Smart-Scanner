@@ -37,6 +37,7 @@ export default function OpeningBreakout(){
    {settings?.mode==="LIVE"&&<div className="info-panel"><div><b>Live execution is not yet available</b><p>{settings.live_block_reason} The selected preference is saved, but starting the strategy in Live mode will be rejected. No live order is sent.</p></div></div>}
    {draft&&<><div className="section-head"><h3>Strategy parameters</h3><p>These values are applied by the Opening Breakout strategy.</p></div>
     <div className="settings-grid">
+     <label className="settings-checkbox"><input type="checkbox" checked={draft.auto_start} onChange={e=>setField("auto_start",e.target.checked)}/> Automatically start PAPER strategy when market feed is ready</label>
      <label>Top gainers count<input type="number" min="1" max="20" value={draft.gainers_count} onChange={e=>setField("gainers_count",Number(e.target.value))}/></label>
      <label>Top losers count<input type="number" min="1" max="20" value={draft.losers_count} onChange={e=>setField("losers_count",Number(e.target.value))}/></label>
      <label>Stop loss (premium points)<input type="number" min="0.05" max="100" step="0.05" value={draft.stop_loss_points} onChange={e=>setField("stop_loss_points",Number(e.target.value))}/></label>
