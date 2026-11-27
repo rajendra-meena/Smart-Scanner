@@ -26,7 +26,8 @@ export default function OpeningBreakout(){
   if(validation.length){setError(validation.join(" "));setNotice("");return;}
   setBusy(true);setError("");setNotice("");try{const result=await api.saveSettings(draft);setSettings(result);setDraft(result.config);setNotice("Settings saved successfully.");await refresh()}catch(e){setError(e instanceof Error?e.message:"Unable to save settings")}finally{setBusy(false)}};
  const start=async()=>{setBusy(true);setError("");try{await api.start(settings?.mode||"PAPER");await refresh()}catch(e){setError(e instanceof Error?e.message:"Start failed")}finally{setBusy(false)}};
- const stop=async()=>{setBusy(true);setError("");try{await api.stop();await refresh()}catch(e){setError(e instanceof Error?e.message:"Stop failed")}finally{setBusy(false)}};\n const deleteTrade=async(trade:BreakoutTrade)=>{
+ const stop=async()=>{setBusy(true);setError("");try{await api.stop();await refresh()}catch(e){setError(e instanceof Error?e.message:"Stop failed")}finally{setBusy(false)}};
+ const deleteTrade=async(trade:BreakoutTrade)=>{
   if(!window.confirm(`Delete completed trade ${trade.id} for ${trade.symbol}? This cannot be undone.`))return;
   setBusy(true);setError("");setNotice("");
   try{await api.deleteTrade(trade.id);setNotice(`Trade ${trade.id} deleted.`);await refresh()}
