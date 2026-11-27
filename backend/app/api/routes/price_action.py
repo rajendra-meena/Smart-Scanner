@@ -50,6 +50,14 @@ def update_settings(payload: PriceActionSettingsRequest, current=Depends(get_cur
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
+
+@router.post("/settings/reset")
+def reset_settings(current=Depends(get_current_session)):
+    try:
+        return price_action_service.reset_settings()
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
 @router.get("/status")
 def status(current=Depends(get_current_session)):
     return price_action_service.snapshot()
