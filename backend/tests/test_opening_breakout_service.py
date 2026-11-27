@@ -1339,3 +1339,77 @@ def test_manual_stop_keeps_position_open_until_fresh_bid_then_closes(
     assert position["exit_price"] == 95.5
     assert service.engine.stocks["XYZ"].active_position_id is None
     assert store.saved_trades[-1]["status"] == "CLOSED"
+
+
+def test_feed_connected_restores_open_paper_position_and_subscribes_option(
+    service_env, monkeypatch
+):
+    service, market_data, store = service_env
+    prepare_start_environment(service, market_data, monkeypatch)
+    market_data.option_rows = [{
+        "instrument_token": 777,
+        "tradingsymbol": "ABC26NOV100CE",
+        "name": "ABC",
+        "instrument_type": "CE",
+        "expiry": NOW.date().isoformat(),
+        "lot_size": 25,
+        "strike": 100,
+        "segment": "NFO-OPT",
+    }]
+    store.save_trade({
+        "id": "RESTORE-777",
+        "trade_date": NOW.date().isoformat(),
+        "symbol": "ABC",
+        "option_symbol": "ABC26NOV100CE",
+        "option_token": 777,
+        "direction": "CE",
+        "lot_size": 25,
+        "quantity": 25,
+        "mode": "PAPER",
+        "status": "OPEN",
+        "entry_price": 100.0,
+        "stop_price": 85.0,
+        "entry_count": 1,
+        "exit_price": None,
+        "pnl": None,
+    })
+
+    result = service.on_feed_connected()
+
+    assert result == {"restored": 1, "unresolved": 1}
+    assert service.running is False
+    assert service.positions["RESTORE-777"]["status"] == "OPEN"
+    assert service.engine.stocks["ABC"].active_position_id == "RESTORE-777"
+    assert market_data.subscriptions == [([777], True)]
+    assert service._watchdog_timer is not None
+
+
+def test_feed_connected_does_not_discard_position_when_option_token_missing(
+    service_env, monkeypatch
+):
+    service, market_data, store = service_env
+    prepare_start_environment(service, market_data, monkeypatch)
+    store.save_trade({
+        "id": "RESTORE-MISSING",
+        "trade_date": NOW.date().isoformat(),
+        "symbol": "ABC",
+        "option_symbol": "ABC26NOV100CE",
+        "option_token": 778,
+        "direction": "CE",
+        "lot_size": 25,
+        "quantity": 25,
+        "mode": "PAPER",
+        "status": "OPEN",
+        "entry_price": 100.0,
+        "stop_price": 85.0,
+    })
+
+    result = service.on_feed_connected()
+
+    assert result == {"restored": 0, "unresolved": 1}
+    assert "RESTORE-MISSING" not in service.positions
+    assert store.saved_trades[0]["status"] == "OPEN"
+    assert any(
+        event["event"] == "OPEN_POSITION_RESTORE_BLOCKED"
+        for event in service.events
+    )
