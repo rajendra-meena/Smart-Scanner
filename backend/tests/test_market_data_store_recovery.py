@@ -191,6 +191,18 @@ def test_completed_trades_can_be_filtered_by_trading_date(tmp_path):
     assert len(store.trades()) == 2
 
 
+def test_delete_trade_removes_only_selected_persisted_record(tmp_path):
+    store = OpeningBreakoutStore(str(tmp_path / "opening_breakout.sqlite3"))
+    first = make_trade("delete-me")
+    second = make_trade("keep-me")
+    store.save_trade(first)
+    store.save_trade(second)
+
+    assert store.delete_trade("delete-me") is True
+    assert store.delete_trade("missing") is False
+    assert store.trades("2026-11-27") == [second]
+
+
 def test_strategy_settings_persist_across_store_instances(tmp_path):
     path = str(tmp_path / "opening_breakout.sqlite3")
     first = OpeningBreakoutStore(path)
