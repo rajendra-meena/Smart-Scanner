@@ -41,6 +41,9 @@ class MarketDataEngine:
         self._option_instruments: list[dict[str, Any]] = []
         self._full_mode_tokens: set[int] = set()
         self._last_index_history_diagnostics: dict[str, dict[str, Any]] = {}
+        # Local command status only; KiteTicker exposes no per-token exchange acknowledgement.
+        self._index_tick_diagnostics: dict[str, dict[str, Any]] = {}
+        self._index_subscription_errors: dict[str, str] = {}
 
     def _set_status(self, status: str, error: str | None = None):
         with self._lock:
@@ -89,6 +92,17 @@ class MarketDataEngine:
                 self._last_tick_monotonic = None
                 self._full_mode_tokens.clear()
                 self._invalid_tick_count = 0
+                self._index_tick_diagnostics = {
+                    str(row.get("symbol") or "").strip().upper(): {
+                        "instrument_token": int(row["instrument_token"]),
+                        "subscription_requested": False,
+                        "last_tick_received_at": None,
+                        "last_tick_monotonic": None,
+                        "raw_ticks": 0, "valid_ticks": 0, "invalid_ticks": 0,
+                    }
+                    for row in instrument_map.values() if row.get("segment") == "INDICES"
+                }
+                self._index_subscription_errors = {}
             ticker = KiteTicker(api_key, access_token)
             ticker.on_ticks, ticker.on_connect = self._on_ticks, self._on_connect
             ticker.on_close, ticker.on_error = self._on_close, self._on_error
@@ -106,13 +120,24 @@ class MarketDataEngine:
             tokens = list(self._subscribed)
             full_tokens = list(self._full_mode_tokens)
         if tokens:
-            ws.subscribe(tokens)
-            full_token_set = set(full_tokens)
-            quote_tokens = [token for token in tokens if token not in full_token_set]
-            if quote_tokens:
-                ws.set_mode(ws.MODE_QUOTE, quote_tokens)
-            if full_tokens:
-                ws.set_mode(ws.MODE_FULL, full_tokens)
+            try:
+                ws.subscribe(tokens)
+                full_token_set = set(full_tokens)
+                quote_tokens = [token for token in tokens if token not in full_token_set]
+                if quote_tokens:
+                    ws.set_mode(ws.MODE_QUOTE, quote_tokens)
+                if full_tokens:
+                    ws.set_mode(ws.MODE_FULL, full_tokens)
+                with self._lock:
+                    for item in self._index_tick_diagnostics.values():
+                        item["subscription_requested"] = True
+            except Exception as exc:
+                with self._lock:
+                    self._index_subscription_errors = {
+                        symbol: f"{type(exc).__name__}: {exc}"
+                        for symbol in self._index_tick_diagnostics
+                    }
+                raise
         self._set_status("connected")
         # Restore subscriptions for persisted Price Action PAPER positions after
         # a backend/websocket restart. The service keeps positions in SQLite.
@@ -131,13 +156,23 @@ class MarketDataEngine:
                 meta = self._instruments.get(token)
                 if not meta:
                     continue
+                index_symbol = str(meta.get("symbol") or "").strip().upper()
+                index_diagnostic = self._index_tick_diagnostics.get(index_symbol) if meta.get("segment") == "INDICES" else None
+                if index_diagnostic is not None:
+                    index_diagnostic["raw_ticks"] += 1
+                    index_diagnostic["last_tick_received_at"] = datetime.now(timezone.utc).isoformat()
+                    index_diagnostic["last_tick_monotonic"] = clock.monotonic()
                 ohlc = tick.get("ohlc") or {}
                 close = float(ohlc.get("close") or 0)
                 ltp = float(tick.get("last_price") or 0)
                 # Never interpret missing/zero prices as a 100% loss or market breadth.
                 if ltp <= 0 or close <= 0:
                     invalid += 1
+                    if index_diagnostic is not None:
+                        index_diagnostic["invalid_ticks"] += 1
                     continue
+                if index_diagnostic is not None:
+                    index_diagnostic["valid_ticks"] += 1
                 enriched = {**meta, "last_price": ltp, "close": close,
                     "open": float(ohlc.get("open") or 0), "high": float(ohlc.get("high") or 0),
                     "low": float(ohlc.get("low") or 0), "volume": int(tick.get("volume") or 0),
@@ -393,6 +428,42 @@ class MarketDataEngine:
     def index_history_diagnostics(self):
         with self._lock:
             return {key: dict(value) for key, value in self._last_index_history_diagnostics.items()}
+
+    def index_feed_diagnostics(self, symbols):
+        """Return per-index instrument, local subscription and tick diagnostics.
+
+        subscription_requested confirms local subscribe/mode calls only, not an
+        exchange acknowledgement.
+        """
+        requested = list(dict.fromkeys(str(s).strip().upper() for s in symbols if str(s).strip()))
+        with self._lock:
+            now = clock.monotonic()
+            by_symbol = {
+                str(row.get("symbol") or "").strip().upper(): row
+                for row in self._instruments.values() if row.get("segment") == "INDICES"
+            }
+            result = {}
+            for symbol in requested:
+                instrument = by_symbol.get(symbol)
+                diagnostic = dict(self._index_tick_diagnostics.get(symbol, {}))
+                token = int(instrument["instrument_token"]) if instrument else None
+                last_monotonic = diagnostic.pop("last_tick_monotonic", None)
+                age = now - last_monotonic if last_monotonic is not None else None
+                result[symbol] = {
+                    "instrument_found": instrument is not None,
+                    "instrument_token": token,
+                    "exchange": instrument.get("exchange") if instrument else None,
+                    "segment": instrument.get("segment") if instrument else None,
+                    "subscribed_locally": token in self._subscribed if token is not None else False,
+                    "subscription_requested": bool(diagnostic.get("subscription_requested", False)),
+                    "subscription_error": self._index_subscription_errors.get(symbol),
+                    "last_tick_received_at": diagnostic.get("last_tick_received_at"),
+                    "tick_age_seconds": round(age, 2) if age is not None and age >= 0 else None,
+                    "raw_ticks": int(diagnostic.get("raw_ticks", 0)),
+                    "valid_ticks": int(diagnostic.get("valid_ticks", 0)),
+                    "invalid_ticks": int(diagnostic.get("invalid_ticks", 0)),
+                }
+        return result
 
     def universe_symbols(self):
         with self._lock:
