@@ -414,7 +414,9 @@ class OpeningBreakoutService:
         # Keep OPEN positions persisted and supervised until quotes recover.
         for position in list(self.positions.values()):
             if position.get("status") == "OPEN":
-                self._persist_open_position(position)
+                self._record_unpriced_feed_exit(
+                    position, now, exit_reason="FEED_GUARD_WAITING_FOR_QUOTE"
+                )
 
         self.running = False
         self._auto_start_suppressed_day = now.date().isoformat()
