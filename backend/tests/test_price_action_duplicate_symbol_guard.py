@@ -13,7 +13,7 @@ def make_service():
     service.positions = {}
     service.pending = {}
     service.events = []
-    service.config = {"max_positions": 3, "max_trades_per_day": 5}
+    service.config = {"max_positions": 3, "max_trades_per_day": 5, "max_daily_loss": 1500}
     return service
 
 
