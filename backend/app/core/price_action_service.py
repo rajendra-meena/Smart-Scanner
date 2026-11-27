@@ -41,6 +41,8 @@ class PriceActionService:
         for position in self.positions.values():
             position["token"] = int(position["token"])
             position["quote_stale"] = True
+            # Do not present the pre-restart mark as a live P&L.
+            position["pnl"] = None
         self.recovery_mode = bool(self.positions)
         self.pending = {}
         self.option_meta = {}
@@ -88,6 +90,14 @@ class PriceActionService:
                     "event": "OPEN_POSITION_RESTORE_SUBSCRIPTION_FAILED",
                     "reason": str(exc),
                 })
+            if self._squareoff_timer is None:
+                now = datetime.now(IST)
+                exit_time = time.fromisoformat(self.config["exit_time"])
+                if now.time() < exit_time:
+                    seconds = max(0, (datetime.combine(now.date(), exit_time, tzinfo=IST) - now).total_seconds())
+                    self._squareoff_timer = Timer(seconds, self.stop)
+                    self._squareoff_timer.daemon = True
+                    self._squareoff_timer.start()
 
     def save_settings(self, values):
         with self.lock:
