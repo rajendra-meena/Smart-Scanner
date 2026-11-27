@@ -62,6 +62,7 @@ class OpeningBreakoutService:
                 "live_ready": False,
                 "live_block_reason": "Live broker order placement, protective SL, partial-fill handling and broker reconciliation are not implemented and verified.",
                 "config": {
+                    "auto_start": self.config.auto_start,
                     "gainers_count": self.config.gainers_count,
                     "losers_count": self.config.losers_count,
                     "stop_loss_points": self.config.stop_loss_points,
