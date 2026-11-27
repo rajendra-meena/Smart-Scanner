@@ -9,7 +9,7 @@ export default function OpeningBreakout(){
  const [settings,setSettings]=useState<BreakoutSettings|null>(null),[draft,setDraft]=useState<BreakoutConfig|null>(null);
  const [view,setView]=useState<"dashboard"|"settings">("dashboard");
  const [error,setError]=useState(""),[notice,setNotice]=useState(""),[busy,setBusy]=useState(false);
- const refresh=async()=>{try{const [s,t,c]=await Promise.all([api.status(),api.trades(),api.settings()]);setStatus(s);setTrades(t);setSettings(c);setDraft(c.config)}catch(e){setError(e instanceof Error?e.message:"Unable to load strategy data")}};
+ const refresh=async()=>{try{const [s,t,c]=await Promise.all([api.status(),api.trades(),api.settings()]);setStatus(s);setTrades(t);setSettings(c);setDraft(prev=>prev??c.config)}catch(e){setError(e instanceof Error?e.message:"Unable to load strategy data")}};
  useEffect(()=>{void refresh();const id=window.setInterval(()=>void refresh(),2000);return()=>window.clearInterval(id)},[]);
  const updateMode=async(mode:"PAPER"|"LIVE")=>{setBusy(true);setError("");setNotice("");try{const result=await api.setMode(mode);setSettings(result);setNotice(mode==="PAPER"?"Paper mode selected and saved.":"Live mode preference saved. Live order execution is not available until broker execution safeguards are implemented.");}catch(e){setError(e instanceof Error?e.message:"Unable to update mode")}finally{setBusy(false)}};
  const save=async()=>{if(!draft)return;setBusy(true);setError("");setNotice("");try{const result=await api.saveSettings(draft);setSettings(result);setDraft(result.config);setNotice("Settings saved successfully.");await refresh()}catch(e){setError(e instanceof Error?e.message:"Unable to save settings")}finally{setBusy(false)}};
@@ -33,7 +33,7 @@ export default function OpeningBreakout(){
      <label>Maximum open positions<input type="number" min="1" max="6" value={draft.max_positions} onChange={e=>setField("max_positions",Number(e.target.value))}/></label>
      <label>Maximum bid/ask spread (%)<input type="number" min="0.01" max="10" step="0.05" value={draft.max_spread_percent} onChange={e=>setField("max_spread_percent",Number(e.target.value))}/></label>
      <label>Strategy exit time (IST)<input type="time" step="1" value={draft.exit_time} onChange={e=>setField("exit_time",e.target.value)}/></label>
-    </div><p className="settings-note">Exit time is currently fixed at 09:30 IST in the strategy engine, so it is not presented as an editable setting. Target is not configured by this strategy.</p>
+    </div><p className="settings-note">Changes take effect the next time you start the strategy. Target is not configured by this strategy.</p>
     <button className="primary" disabled={busy} onClick={()=>void save()}>{busy?"Saving…":"Save settings"}</button>
    </>}
   </div>:<>
