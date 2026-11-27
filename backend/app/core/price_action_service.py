@@ -1,13 +1,14 @@
 """Paper-only F&O options execution for the independent Price Action strategy."""
 import json
 import sqlite3
-from datetime import datetime, time
+from datetime import datetime, time, timedelta
 from pathlib import Path
 from threading import RLock, Timer, Thread
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
 from .price_action_engine import PriceActionEngine
+from .market_regime_engine import MarketRegimeEngine
 
 IST = ZoneInfo("Asia/Kolkata")
 
@@ -36,6 +37,7 @@ class PriceActionService:
             restored_positions = [json.loads(row[0]) for row in db.execute("SELECT payload FROM price_action_open_positions")]
         self.config = {**self.DEFAULTS, **saved}
         self.engine = PriceActionEngine(self.config)
+        self.market_regime = MarketRegimeEngine()
         self.running = False
         self.positions = {str(p["id"]): p for p in restored_positions if p.get("status") == "OPEN"}
         for position in self.positions.values():
@@ -142,12 +144,40 @@ class PriceActionService:
             self.running = True
             self.started_day = now.date().isoformat()
             self.engine.reset()
+            self.market_regime.reset()
             snapshot = self.market_data.snapshot()
             fno_symbols = {str(symbol).upper() for symbol in self.market_data.universe_symbols()}
             eligible = [row for row in snapshot.get("all_equity", []) if str(row.get("symbol") or "").upper() in fno_symbols and row.get("instrument_type") == "EQ" and float(row.get("last_price") or 0) > 0]
             gainers = sorted([row for row in eligible if float(row.get("change_percent") or 0) > 0], key=lambda row: float(row.get("change_percent") or 0), reverse=True)[:int(self.config["gainers_count"])]
             losers = sorted([row for row in eligible if float(row.get("change_percent") or 0) < 0], key=lambda row: float(row.get("change_percent") or 0))[:int(self.config["losers_count"])]
             self.allowed_symbols = {str(row["symbol"]).upper() for row in gainers + losers}
+
+            # Load multi-day, real Zerodha index history so EMA50/ADX have
+            # enough completed candles before any candidate can be approved.
+            index_end = now.replace(tzinfo=None, second=0, microsecond=0)
+            index_start = index_end - timedelta(days=7)
+            index_history = {}
+            for interval in ("5minute", "15minute"):
+                index_history[interval] = self.market_data.historical_index_candles(
+                    self.market_regime.REQUIRED_INDICES,
+                    index_start,
+                    index_end,
+                    interval=interval,
+                )
+                for index_symbol in self.market_regime.REQUIRED_INDICES:
+                    self.market_regime.seed_history(
+                        index_symbol,
+                        interval,
+                        index_history[interval].get(index_symbol, []),
+                        now=now,
+                    )
+            regime_snapshot = self.market_regime.snapshot()
+            self.events = [{
+                "time": now.isoformat(), "event": "MARKET_REGIME_BASELINE_LOADED",
+                "detail": "Real Zerodha 5m/15m history loaded for NIFTY 50 and NIFTY BANK",
+                "regime": regime_snapshot["regime"],
+                "reason": regime_snapshot["reason"],
+            }]
             history_start = datetime.combine(now.date(), time(9, 15))
             history_end = now.replace(tzinfo=None, second=0, microsecond=0)
             historical = self.market_data.historical_minute_candles(
@@ -268,6 +298,11 @@ class PriceActionService:
                 Thread(target=self._auto_start_worker, daemon=True, name="price-action-auto-start").start()
             # Existing PAPER positions must keep receiving SL/target monitoring
             # after a backend restart, even before the strategy is manually restarted.
+            # Keep the index regime dashboard current even while strategy entries
+            # are stopped; index ticks never create an order by themselves.
+            for row in rows:
+                if row.get("instrument_type") == "INDEX":
+                    self.market_regime.on_tick(row, now)
             if not self.running and not self.positions:
                 return
             if not self.market_data.is_feed_fresh(5):
@@ -290,6 +325,17 @@ class PriceActionService:
                 self._attempted_day = None
 
     def _queue_option(self, signal, now):
+        allowed, regime = self.market_regime.allows(signal.get("direction"))
+        if not allowed:
+            self.events.append({
+                "time": now.isoformat(),
+                "event": "SIGNAL_REJECTED_MARKET_REGIME",
+                "symbol": signal.get("symbol"),
+                "direction": signal.get("direction"),
+                "market_regime": regime.get("regime"),
+                "reason": regime.get("reason"),
+            })
+            return
         # One active trade lifecycle per underlying symbol. A new candle signal
         # must not open another option position while this symbol is open/pending.
         symbol = str(signal.get("symbol") or "").upper()
@@ -422,4 +468,4 @@ class PriceActionService:
         return [json.loads(r[0]) for r in rows]
 
     def snapshot(self):
-        return {"running":self.running,"mode":"PAPER","enabled":self.config["enabled"],"market_data_ready":self.market_data.is_feed_fresh(5),"watchlist":self.engine.snapshot(),"positions":list(self.positions.values()),"open_positions":sum(p["status"]=="OPEN" for p in self.positions.values()),"open_pnl":round(sum(float(p.get("pnl") or 0) for p in self.positions.values() if p.get("status")=="OPEN" and p.get("pnl") is not None),2),"open_capital_used":round(sum(float(p.get("entry_price") or 0)*int(p.get("quantity") or 0) for p in self.positions.values() if p.get("status")=="OPEN"),2),"trades_count":len(self.trades(datetime.now(IST).date().isoformat())),"trades":self.trades(datetime.now(IST).date().isoformat()),"events":self.events[-100:]}
+        return {"running":self.running,"mode":"PAPER","enabled":self.config["enabled"],"market_data_ready":self.market_data.is_feed_fresh(5),"market_regime":self.market_regime.snapshot(),"watchlist":self.engine.snapshot(),"positions":list(self.positions.values()),"open_positions":sum(p["status"]=="OPEN" for p in self.positions.values()),"open_pnl":round(sum(float(p.get("pnl") or 0) for p in self.positions.values() if p.get("status")=="OPEN" and p.get("pnl") is not None),2),"open_capital_used":round(sum(float(p.get("entry_price") or 0)*int(p.get("quantity") or 0) for p in self.positions.values() if p.get("status")=="OPEN"),2),"trades_count":len(self.trades(datetime.now(IST).date().isoformat())),"trades":self.trades(datetime.now(IST).date().isoformat()),"events":self.events[-100:]}
