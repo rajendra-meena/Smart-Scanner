@@ -404,11 +404,16 @@ class MarketRegimeEngine:
         # Per-symbol snapshots still use the same active set plus that symbol's
         # sector index when needed.
         with self.lock:
-            required = list(self.active_indices)
-        if underlying_symbol:
-            sector = self.sector_index_for_symbol(underlying_symbol)
-            if sector and sector not in required:
-                required.append(sector)
+            if underlying_symbol:
+                # A stock entry depends only on the broad indices and its own mapped sector.
+                # An unrelated missing sector feed must not block every other sector.
+                sector = self.sector_index_for_symbol(underlying_symbol)
+                required = list(self.REQUIRED_INDICES)
+                if sector and sector not in required:
+                    required.append(sector)
+            else:
+                # Dashboard overview still displays the complete registered universe.
+                required = list(self.active_indices)
         with self.lock:
             now = monotonic()
             indices = {}
