@@ -310,3 +310,18 @@ def test_unrelated_missing_sector_does_not_block_mapped_stock_entry(monkeypatch)
     assert allowed is True
     assert snapshot["required_indices"] == ["NIFTY 50", "NIFTY BANK", "NIFTY IT"]
     assert "NIFTY CONSUMER DURABLES" not in snapshot["indices"]
+
+
+
+def test_consumer_durables_index_is_not_required_without_verified_instrument():
+    engine = MarketRegimeEngine()
+    constituents = ["VOLTAS", "HAVELLS", "DIXON", "CROMPTON", "POLYCAB", "WHIRLPOOL", "BLUESTARCO"]
+
+    required = engine.indices_for_symbols(constituents)
+
+    assert required == ["NIFTY 50", "NIFTY BANK"]
+    for symbol in constituents:
+        assert engine.sector_index_for_symbol(symbol) is None
+        allowed, snapshot = engine.allows("CE", symbol)
+        assert allowed is False
+        assert "No approved sector-index mapping" in snapshot["reason"]
