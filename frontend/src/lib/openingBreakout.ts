@@ -1,7 +1,7 @@
 export type BreakoutTrade={id:string;symbol:string;direction:string;mode:string;status:string;entry_price?:number;exit_price?:number;exit_reason?:string;quantity?:number;opened_at?:string;closed_at?:string;pnl?:number;option_symbol?:string;stop_price?:number};
 export type BreakoutConfig={auto_start:boolean;gainers_count:number;losers_count:number;stop_loss_points:number;max_positions:number;max_spread_percent:number;exit_time:string};
 export type BreakoutSettings={mode:"PAPER"|"LIVE";config:BreakoutConfig;live_ready:boolean;live_block_reason:string};
-export type BreakoutStatus={running:boolean;mode:string|null;market_data_ready:boolean;watchlist_count:number;open_positions:number;trades_count:number;watchlist?:Array<{symbol:string;opening_price:number|null;last_price:number|null;signal:string|null;traded:boolean;skipped:boolean}>;positions?:Array<Record<string,unknown>>;events:Array<Record<string,unknown>>;live_ready:boolean;live_block_reason:string};
+export type BreakoutStatus={running:boolean;mode:string|null;market_data_ready:boolean;watchlist_count:number;open_positions:number;trades_count:number;watchlist?:Array<{symbol:string;opening_price:number|null;last_price:number|null;signal:string|null;signal_stage?:string;traded:boolean;skipped:boolean}>;positions?:Array<Record<string,unknown>>;events:Array<Record<string,unknown>>;live_ready:boolean;live_block_reason:string};
 function responseError(detail:unknown):string{
  if(typeof detail==="string")return detail;
  if(Array.isArray(detail)){
