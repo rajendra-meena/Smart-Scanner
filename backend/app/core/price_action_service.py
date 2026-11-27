@@ -58,6 +58,10 @@ class PriceActionService:
         self._feed_stale_notified = False
         self._stale_option_notified = set()
 
+    def _index_feed_diagnostics(self, symbols):
+        getter = getattr(self.market_data, "index_feed_diagnostics", None)
+        return getter(symbols) if callable(getter) else {}
+
     def _persist_open_position(self, position):
         """Durably save an active PAPER position so process restarts cannot erase it."""
         with sqlite3.connect(self.db_path) as db:
@@ -222,7 +226,7 @@ class PriceActionService:
                             f"ATR baseline sessions={history_state.get('atr_baseline_sessions', 0)}"
                         ),
                     })
-            websocket_diagnostics = self.market_data.index_feed_diagnostics(required_indices)
+            websocket_diagnostics = self._index_feed_diagnostics(required_indices)
             for index_symbol, diagnostic in websocket_diagnostics.items():
                 self.events.append({
                     "time": now.isoformat(),
@@ -555,9 +559,7 @@ class PriceActionService:
 
     def snapshot(self):
         market_regime = self.market_regime.snapshot()
-        websocket_diagnostics = self.market_data.index_feed_diagnostics(
-            market_regime.get("required_indices", [])
-        )
+        websocket_diagnostics = self._index_feed_diagnostics(market_regime.get("required_indices", []))
         for symbol, diagnostic in websocket_diagnostics.items():
             if symbol in market_regime.get("indices", {}):
                 market_regime["indices"][symbol]["websocket"] = diagnostic
