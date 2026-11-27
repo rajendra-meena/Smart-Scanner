@@ -1346,6 +1346,8 @@ def test_feed_connected_restores_open_paper_position_and_subscribes_option(
 ):
     service, market_data, store = service_env
     prepare_start_environment(service, market_data, monkeypatch)
+    monkeypatch.setattr(service_module, "Timer", FakeTimer)
+    FakeTimer.instances.clear()
     market_data.option_rows = [{
         "instrument_token": 777,
         "tradingsymbol": "ABC26NOV100CE",
@@ -1389,6 +1391,8 @@ def test_feed_connected_does_not_discard_position_when_option_token_missing(
 ):
     service, market_data, store = service_env
     prepare_start_environment(service, market_data, monkeypatch)
+    monkeypatch.setattr(service_module, "Timer", FakeTimer)
+    FakeTimer.instances.clear()
     store.save_trade({
         "id": "RESTORE-MISSING",
         "trade_date": NOW.date().isoformat(),
