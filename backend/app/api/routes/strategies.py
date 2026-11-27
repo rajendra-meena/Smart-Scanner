@@ -18,7 +18,7 @@ class ConfigRequest(BaseModel):
     gainers_count: int = Field(default=3, ge=1, le=20)
     losers_count: int = Field(default=3, ge=1, le=20)
     stop_loss_points: float = Field(default=15, gt=0, le=100)
-    max_positions: int = Field(default=6, ge=1, le=6)
+    max_positions: int = Field(default=6, ge=1)
     max_spread_percent: float = Field(default=1.0, gt=0, le=10)
     exit_time: str = Field(default="09:30:00")
 
