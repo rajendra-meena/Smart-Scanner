@@ -102,3 +102,35 @@ def test_index_tick_diagnostics_count_raw_valid_and_invalid_ticks(monkeypatch):
     assert diagnostics["invalid_ticks"] == 1
     assert diagnostics["last_tick_received_at"] is not None
     assert diagnostics["tick_age_seconds"] is not None
+
+
+
+def test_price_action_routes_index_ticks_even_when_strategy_disabled():
+    from threading import RLock
+
+    from app.core.price_action_service import PriceActionService
+
+    class RegimeRecorder:
+        def __init__(self):
+            self.rows = []
+
+        def on_tick(self, row, now):
+            self.rows.append(row)
+
+    service = PriceActionService.__new__(PriceActionService)
+    service.lock = RLock()
+    service.config = {"enabled": False}
+    service.running = False
+    service.positions = {}
+    service.market_regime = RegimeRecorder()
+
+    # Segment is authoritative even if an unexpected instrument_type slips through.
+    index_row = {
+        "symbol": "NIFTY 50",
+        "segment": "INDICES",
+        "instrument_type": "EQ",
+        "last_price": 24000,
+    }
+    service.on_market_tick([index_row])
+
+    assert service.market_regime.rows == [index_row]
