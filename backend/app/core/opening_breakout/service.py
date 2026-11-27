@@ -760,5 +760,6 @@ class OpeningBreakoutService:
             ),
         }
 
-    def trades(self):
-        return self.store.trades()
+    def trades(self, trade_date=None):
+        selected_date = trade_date or datetime.now(IST).date().isoformat()
+        return self.store.trades(selected_date)
