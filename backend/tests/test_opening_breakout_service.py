@@ -1096,7 +1096,7 @@ def test_watchdog_stops_when_option_quote_stales_while_equity_feed_is_fresh(
     assert position["status"] == "OPEN"
     assert position["exit_price"] is None
     assert position.get("pnl") is None
-    assert service.engine.stocks["XYZ"].active_position_id is None
+    assert service.engine.stocks["XYZ"].active_position_id == position["id"]
     assert watchdog.cancelled is True
     assert service._watchdog_timer is not None
     assert len(store.saved_trades) == 1
@@ -1154,14 +1154,14 @@ def test_square_off_never_uses_stale_cached_option_bid(
     assert position["exit_price"] is None
     assert position["exit_reason"] == "TIME_EXIT_09_30_WAITING_FOR_QUOTE"
     assert position.get("pnl") is None
-    assert service.engine.stocks["XYZ"].active_position_id is None
+    assert service.engine.stocks["XYZ"].active_position_id == position["id"]
     assert len(store.saved_trades) == 1
     assert store.saved_trades[0]["exit_price"] is None
     unpriced_event = next(
         event for event in service.events
         if event["event"] == "PAPER_EXIT_WAITING_FOR_QUOTE"
     )
-    assert unpriced_event["reason"] == "TIME_EXIT_09_30_UNPRICED"
+    assert unpriced_event["reason"] == "TIME_EXIT_09_30_WAITING_FOR_QUOTE"
 
 
 def test_square_off_accepts_fresh_option_tick_from_cutoff_batch(
