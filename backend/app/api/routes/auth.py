@@ -73,7 +73,9 @@ def logout(request: Request, response: Response):
                 "Opening Breakout cleanup failed during logout"
             )
 
-        # 2. Stop shared market data feed.
+        # 2. Stop shared market data feed. Any unresolved Opening Breakout
+        # PAPER positions have already been persisted by stop(); the next
+        # authenticated feed connection restores and resubscribes them.
         try:
             market_data_engine.stop(current.access_token)
         except Exception:
