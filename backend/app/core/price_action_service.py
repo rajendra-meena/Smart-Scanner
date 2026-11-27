@@ -312,6 +312,30 @@ class PriceActionService:
         with sqlite3.connect(self.db_path) as db:db.execute("INSERT OR REPLACE INTO price_action_trades VALUES(?,?,?)",(pos["id"],trade["trade_date"],json.dumps(trade,default=str)))
         self.events.append({"time":now.isoformat(),"event":"PAPER_EXIT","symbol":pos["symbol"],"reason":reason,"pnl":pos["pnl"]})
 
+    def delete_trade(self, trade_id):
+        """Delete one completed trade from the persistent trade history."""
+        with self.lock:
+            if any(pos.get("id") == trade_id and pos.get("status") == "OPEN" for pos in self.positions.values()):
+                raise RuntimeError("Open positions cannot be deleted. Close the position first.")
+            with sqlite3.connect(self.db_path) as db:
+                row = db.execute(
+                    "SELECT payload FROM price_action_trades WHERE id = ?",
+                    (trade_id,),
+                ).fetchone()
+                if not row:
+                    raise RuntimeError("Completed trade was not found. It may already be deleted.")
+                trade = json.loads(row[0])
+                if trade.get("status") not in ("CLOSED", "CLOSED_UNPRICED"):
+                    raise RuntimeError("Only completed trades can be deleted.")
+                db.execute("DELETE FROM price_action_trades WHERE id = ?", (trade_id,))
+            self.events.append({
+                "time": datetime.now(IST).isoformat(),
+                "event": "TRADE_DELETED",
+                "symbol": trade.get("symbol"),
+                "trade_id": trade_id,
+            })
+            return {"deleted": True, "trade_id": trade_id}
+
     def trades(self, trade_date=None):
         with sqlite3.connect(self.db_path) as db:
             if trade_date: rows=db.execute("SELECT payload FROM price_action_trades WHERE trade_date=? ORDER BY rowid DESC",(trade_date,)).fetchall()
