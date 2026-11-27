@@ -418,7 +418,8 @@ class OpeningBreakoutService:
                 exit_time = self._exit_clock_time()
                 auto_start_window = time(9, 15, 30) <= now.time() < exit_time
                 if (
-                    self.config.auto_start
+                    self.config.enabled
+                    and self.config.auto_start
                     and self.selected_mode == "PAPER"
                     and auto_start_window
                     and self._auto_start_attempted_day != today
