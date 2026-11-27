@@ -4,14 +4,18 @@ import {priceActionApi,type PriceActionConfig,type PriceActionState} from "../li
 
 const initial:PriceActionConfig={enabled:true,auto_start:true,mode:"PAPER",max_positions:3,max_trades_per_day:5,stop_loss_percent:15,risk_reward:2,max_spread_percent:1,volume_filter:false,volume_multiplier:1.2,exit_time:"15:15:00",max_daily_loss:1500,gainers_count:20,losers_count:20};
 const fmt=(v:any)=>typeof v==="number"?v.toLocaleString("en-IN",{maximumFractionDigits:2}):"—";
-const clock=(v:any)=>v?new Date(v).toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit",second:"2-digit"}):"—";\nconst todayLocal=()=>{const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`};
+const clock=(v:any)=>v?new Date(v).toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit",second:"2-digit"}):"—";
+const todayLocal=()=>{const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`};
 
 export default function PriceActionIntraday(){
- const [config,setConfig]=useState<PriceActionConfig>(initial),[state,setState]=useState<PriceActionState|null>(null);\n const [completedTrades,setCompletedTrades]=useState<Array<Record<string,any>>>([]),[tradeDate,setTradeDate]=useState(todayLocal);
+ const [config,setConfig]=useState<PriceActionConfig>(initial),[state,setState]=useState<PriceActionState|null>(null);
+ const [completedTrades,setCompletedTrades]=useState<Array<Record<string,any>>>([]),[tradeDate,setTradeDate]=useState(todayLocal);
  const settingsLoaded=useRef(false);
  const [tab,setTab]=useState<"dashboard"|"settings">("dashboard"),[busy,setBusy]=useState(false),[error,setError]=useState(""),[notice,setNotice]=useState("");
- const refresh=async()=>{try{const [s,st]=await Promise.all([priceActionApi.settings(),priceActionApi.status()]);if(!settingsLoaded.current){setConfig(s.config);settingsLoaded.current=true}setState(st)}catch(e){setError(e instanceof Error?e.message:"Unable to load Price Action strategy")}};\n const refreshCompletedTrades=async(date=tradeDate)=>{try{setCompletedTrades(await priceActionApi.trades(date))}catch(e){setError(e instanceof Error?e.message:"Unable to load completed trades")}};
- useEffect(()=>{void refresh();const id=window.setInterval(()=>void refresh(),2000);return()=>window.clearInterval(id)},[]);\n useEffect(()=>{void refreshCompletedTrades(tradeDate)},[tradeDate]);
+ const refresh=async()=>{try{const [s,st]=await Promise.all([priceActionApi.settings(),priceActionApi.status()]);if(!settingsLoaded.current){setConfig(s.config);settingsLoaded.current=true}setState(st)}catch(e){setError(e instanceof Error?e.message:"Unable to load Price Action strategy")}};
+ const refreshCompletedTrades=async(date=tradeDate)=>{try{setCompletedTrades(await priceActionApi.trades(date))}catch(e){setError(e instanceof Error?e.message:"Unable to load completed trades")}};
+ useEffect(()=>{void refresh();const id=window.setInterval(()=>void refresh(),2000);return()=>window.clearInterval(id)},[]);
+ useEffect(()=>{void refreshCompletedTrades(tradeDate)},[tradeDate]);
  const save=async()=>{setBusy(true);setError("");setNotice("");try{const r=await priceActionApi.save(config);setConfig(r.config);setNotice("Price Action settings saved.")}catch(e){setError(e instanceof Error?e.message:"Save failed")}finally{setBusy(false)}};
  const reset=async()=>{if(!window.confirm("Reset all Price Action strategy settings to their default values?"))return;setBusy(true);setError("");setNotice("");try{const r=await priceActionApi.reset();setConfig(r.config);setNotice("Strategy settings have been reset to defaults and saved.")}catch(e){setError(e instanceof Error?e.message:"Reset failed")}finally{setBusy(false)}};
  const run=async(start:boolean)=>{setBusy(true);setError("");setNotice("");try{setState(start?await priceActionApi.start():await priceActionApi.stop());setNotice(start?"Price Action PAPER strategy started.":"Price Action strategy stopped.")}catch(e){setError(e instanceof Error?e.message:"Action failed")}finally{setBusy(false)}};
@@ -40,7 +44,9 @@ export default function PriceActionIntraday(){
    <div className="global-defaults-grid">
     <label className="pa-toggle">Strategy enabled<select value={String(config.enabled)} onChange={e=>setConfig({...config,enabled:e.target.value==="true"})}><option value="true">Enabled</option><option value="false">Disabled</option></select></label>
     <label className="pa-toggle">Automatic start<select value={String(config.auto_start)} onChange={e=>setConfig({...config,auto_start:e.target.value==="true"})}><option value="true">ON — after 09:20 IST</option><option value="false">OFF — manual start</option></select></label>
-    {field("F&O top gainers","gainers_count","1","1")}\n    {field("F&O top losers","losers_count","1","1")}\n    {field("Maximum open positions","max_positions","1","1")}
+    {field("F&O top gainers","gainers_count","1","1")}
+    {field("F&O top losers","losers_count","1","1")}
+    {field("Maximum open positions","max_positions","1","1")}
     {field("Maximum trades per day","max_trades_per_day","1","1")}
     {field("Stop loss (% of option premium)","stop_loss_percent","0.5","1")}
     {field("Risk : Reward (e.g. 2 = 1:2)","risk_reward","0.1","1")}
