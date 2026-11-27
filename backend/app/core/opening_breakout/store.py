@@ -113,6 +113,39 @@ class OpeningBreakoutStore:
             self._replay_recovery_locked()
             return True
 
+    def delete_trade(self, trade_id: str):
+        """Delete one completed trade from SQLite and its recovery journal."""
+        with self.lock:
+            self._replay_recovery_locked()
+            with self.connect() as db:
+                cursor = db.execute(
+                    "DELETE FROM strategy_trades WHERE id=?",
+                    (trade_id,),
+                )
+                deleted = cursor.rowcount > 0
+
+            # A not-yet-replayed journal entry must not resurrect a deleted row.
+            if self.recovery_path.exists():
+                try:
+                    kept = []
+                    for line in self.recovery_path.read_text(encoding="utf-8").splitlines():
+                        if not line.strip():
+                            continue
+                        record = json.loads(line)
+                        if str(record.get("id")) != trade_id:
+                            kept.append(json.dumps(record, default=str, separators=(",", ":")))
+                        else:
+                            deleted = True
+                    if kept:
+                        temporary = self.recovery_path.with_suffix(self.recovery_path.suffix + ".tmp")
+                        temporary.write_text("\\n".join(kept) + "\\n", encoding="utf-8")
+                        os.replace(temporary, self.recovery_path)
+                    else:
+                        self.recovery_path.unlink(missing_ok=True)
+                except (OSError, ValueError, TypeError):
+                    raise RuntimeError("Could not safely update the trade recovery journal.")
+            return deleted
+
     def trades(self, trade_date: str | None = None):
         with self.lock:
             self._replay_recovery_locked()
