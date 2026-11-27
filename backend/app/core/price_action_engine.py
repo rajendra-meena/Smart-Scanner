@@ -45,7 +45,7 @@ class PriceActionEngine:
         if current["minute"] != minute:
             signal = self._close_minute(symbol, current)
             baseline = self.last_cumulative_volume.get(symbol, volume)
-            self.current[symbol] = {"minute": minute, "open": price, "high": price, "low": price, "close": price, "volume": max(0, volume - baseline)}
+            self.current[symbol] = {"minute": minute, "open": price, "high": price, "low": price, "close": price, "volume_start": baseline, "volume": max(0, volume - baseline)}
             self.last_cumulative_volume[symbol] = volume
             return signal
         current["high"] = max(current["high"], price)
