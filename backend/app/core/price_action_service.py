@@ -180,7 +180,8 @@ class PriceActionService:
         if open_count >= int(self.config["max_positions"]) or trades_today + len(self.pending) >= int(self.config["max_trades_per_day"]):
             self.events.append({"time":now.isoformat(),"event":"SIGNAL_SKIPPED","symbol":signal["symbol"],"reason":"Position or daily trade limit reached"})
             return
-        if sum(float(p.get("pnl") or 0) for p in self.positions.values() if p["status"]=="CLOSED") <= -abs(float(self.config["max_daily_loss"])):
+        realized_today = sum(float(trade.get("pnl") or 0) for trade in self.trades(now.date().isoformat()))
+        if realized_today <= -abs(float(self.config["max_daily_loss"])):
             self.events.append({"time":now.isoformat(),"event":"SIGNAL_SKIPPED","symbol":signal["symbol"],"reason":"Maximum daily loss reached"})
             return
         options = [r for r in self.market_data.option_instruments(signal["symbol"]) if r.get("instrument_type")==signal["direction"] and r.get("expiry") and r["expiry"] >= now.date().isoformat()]
