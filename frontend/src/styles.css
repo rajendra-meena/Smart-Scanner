@@ -554,3 +554,51 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid 
 .pa-events span,.pa-events small{color:var(--ss-muted)}.pa-events b{color:var(--ss-olive)}
 .price-action-registry-card{margin-top:12px}
 @media(max-width:650px){.pa-events>div{grid-template-columns:1fr;gap:4px}.pa-controls>span{width:100%;margin-left:0}.pa-section-head{align-items:flex-start}}
+
+/* Price Action dashboard: high-contrast, readable light workspace */
+.pa-workspace{background:#fff!important;color:#172033!important;border:1px solid #e3e8dc!important;box-shadow:0 14px 38px rgba(28,38,24,.08)!important;padding:24px!important}
+.pa-workspace .panel-title{margin-bottom:16px}
+.pa-workspace .panel-title h2{color:#172033!important;font-size:22px!important;letter-spacing:-.5px}
+.pa-workspace .panel-title p{color:#596579!important;font-size:12px!important;line-height:1.55}
+.pa-workspace .live-label{background:#edf6dc!important;color:#49651e!important;border-color:#d8e7b8!important;font-size:9px!important}
+.pa-statusline{background:#f6f8f2!important;border:1px solid #dfe6d5!important;color:#344054!important;font-size:11px!important;min-height:40px}
+.pa-statusline b{color:#1f2937!important;font-size:10px;letter-spacing:.45px}
+.pa-workspace .tabs{border-bottom:1px solid #e2e8dc!important}
+.pa-workspace .tab{color:#536071!important;font-size:11px!important;padding:11px 15px!important}
+.pa-workspace .tab.active{color:#1f2937!important;background:#f2f6e9!important;border-color:#dce5cd!important;border-bottom-color:#7b963f!important;font-weight:800}
+.pa-controls .primary,.pa-workspace .primary{background:#273b22!important;color:#fff!important;border:1px solid #273b22!important;box-shadow:0 4px 10px #273b2220}
+.pa-controls .primary:disabled,.pa-controls .secondary-action:disabled{opacity:.48!important}
+.pa-controls .secondary-action{background:#f2f6e9!important;color:#435b2c!important;border-color:#d5e1c5!important}
+.pa-controls>span{color:#536071!important;font-size:11px!important}
+.pa-workspace .orders-overview-stats>div{background:linear-gradient(145deg,#fff,#fafbf7)!important;border:1px solid #e1e7db!important;box-shadow:0 3px 12px #1c26100a}
+.pa-workspace .orders-overview-stats small{color:#687386!important;font-size:9px!important;letter-spacing:.9px}
+.pa-workspace .orders-overview-stats strong{color:#172033!important;font-size:23px!important}
+.pa-section-head{margin:25px 0 12px!important;align-items:flex-end}
+.pa-section-head h3{color:#172033!important;font-size:16px!important;letter-spacing:-.2px}
+.pa-section-head p{color:#657184!important;font-size:11px!important;line-height:1.55;margin-top:4px}
+.pa-live-caption{font-size:9px;font-weight:900;letter-spacing:.8px;color:#526b2d;background:#f0f5e5;border:1px solid #dce8c9;padding:7px 10px;border-radius:30px;white-space:nowrap}
+.pa-workspace .table-scroll{border:1px solid #d8dfd2!important;border-radius:11px!important;background:#fff!important;box-shadow:0 3px 12px #1b26100a}
+.pa-workspace .trade-table{min-width:1040px!important}
+.pa-workspace .trade-table th{background:#26352a!important;color:#f4f7ed!important;font-size:10px!important;letter-spacing:.65px!important;padding:13px 14px!important;border:0!important}
+.pa-workspace .trade-table td{background:#fff!important;color:#344054!important;font-size:12px!important;font-weight:550;padding:12px 14px!important;border-top:1px solid #e8ece4!important}
+.pa-workspace .trade-table td b{color:#172033!important;font-size:12px!important}
+.pa-workspace .trade-table td small{color:#667085!important;font-size:10px!important}
+.pa-workspace .trade-table tbody tr:nth-child(even) td{background:#fafbf8!important}
+.pa-workspace .trade-table tbody tr:hover td{background:#f1f6e9!important}
+.pa-workspace .trade-table .up,.pa-workspace .up{color:#16834a!important}
+.pa-workspace .trade-table .down,.pa-workspace .down{color:#c43d4b!important}
+.pa-workspace .empty{color:#596579!important;background:#f8faf5!important;border:1px dashed #d5ddce!important;border-radius:10px!important;padding:20px!important;font-size:12px!important;text-align:center}
+.pa-events>div{background:#fafbf8!important;border-color:#e4e9df!important;grid-template-columns:105px 190px minmax(0,1fr)!important;padding:11px 13px!important;font-size:11px!important}
+.pa-events span{color:#667085!important;font-variant-numeric:tabular-nums}
+.pa-events b{color:#354c24!important;font-size:10px!important;letter-spacing:.3px}
+.pa-events small{color:#596579!important;font-size:11px!important}
+.pa-field,.pa-toggle{background:#fff!important;color:#263238!important;border-color:#dce3d7!important;font-size:11px!important;box-shadow:0 2px 8px #17203308}
+.pa-field input,.pa-toggle select,.pa-toggle input{background:#fbfcf9!important;color:#172033!important;border-color:#d4ddcc!important;font-size:13px!important;min-height:40px}
+.pa-field input:focus,.pa-toggle select:focus,.pa-toggle input:focus{outline:2px solid #a8bf79!important;outline-offset:1px}
+.pa-settings-footnote{color:#596579!important;font-size:11px!important;line-height:1.7}
+.pa-workspace .strategy-safety-note{background:#f5f8ed!important;border-color:#dce7cb!important;color:#455b2d!important}
+.pa-workspace .strategy-safety-note b{color:#314521!important;font-size:12px}
+.pa-workspace .strategy-safety-note p{color:#596579!important;font-size:11px!important}
+.pa-workspace .alert{color:#9b2c35!important;background:#fff2f1!important;border-color:#f1c9c8!important;font-size:12px!important}
+.pa-workspace .strategy-notice{color:#35551f!important;background:#f3f8e9!important;border-color:#dce8c8!important;font-size:11px!important}
+@media(max-width:650px){.pa-workspace{padding:15px!important}.pa-workspace .panel-title h2{font-size:19px!important}.pa-section-head{gap:10px;flex-direction:column;align-items:flex-start}.pa-events>div{grid-template-columns:1fr!important}.pa-live-caption{align-self:flex-start}}
