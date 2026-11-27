@@ -30,7 +30,9 @@ class MarketRegimeEngine:
         **dict.fromkeys(("RELIANCE", "ONGC", "IOC", "BPCL", "GAIL", "OIL", "PETRONET", "IGL", "MGL"), "NIFTY OIL AND GAS"),
         **dict.fromkeys(("ZEEL", "PVRINOX", "SUNTV", "NETWORK18"), "NIFTY MEDIA"),
         **dict.fromkeys(("APOLLOHOSP", "MAXHEALTH", "FORTIS", "SYNGENE", "LALPATHLAB", "METROPOLIS"), "NIFTY HEALTHCARE"),
-        **dict.fromkeys(("VOLTAS", "HAVELLS", "DIXON", "CROMPTON", "POLYCAB", "WHIRLPOOL", "BLUESTARCO"), "NIFTY CONSUMER DURABLES"),
+        # NIFTY CONSUMER DURABLES is absent from the current Zerodha instrument
+        # master. Its constituents remain unmapped and fail closed until an
+        # approved, verified sector-index source is configured.
         **dict.fromkeys(("BAJFINANCE", "BAJAJFINSV", "CHOLAFIN", "SHRIRAMFIN", "SBICARD", "HDFCAMC", "MUTHOOTFIN", "RECLTD", "PFC", "LICHSGFIN", "MANAPPURAM"), "NIFTY FIN SERVICE"),
         **dict.fromkeys(("NTPC", "POWERGRID", "ADANIPOWER", "TATAPOWER", "NHPC", "SJVN"), "NIFTY ENERGY"),
     }
