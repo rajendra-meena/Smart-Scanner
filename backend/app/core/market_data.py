@@ -319,6 +319,58 @@ class MarketDataEngine:
             clock.sleep(0.35)
         return result
 
+    def index_instruments(self):
+        """Return the actual NSE index instruments loaded from Zerodha's instrument master."""
+        with self._lock:
+            return [
+                dict(row) for row in self._instruments.values()
+                if row.get("exchange") == "NSE" and row.get("segment") == "INDICES"
+            ]
+
+    def historical_index_candles(self, symbols, start_at, end_at, interval="minute"):
+        """Fetch real Zerodha historical candles for known NSE indices only.
+
+        Supported intervals mirror KiteConnect's documented candle intervals.
+        Missing index instruments or individual history failures return an empty
+        list for that symbol; a missing authenticated Kite client is a hard error.
+        """
+        allowed_intervals = {"minute", "5minute", "15minute"}
+        if interval not in allowed_intervals:
+            raise ValueError("Unsupported index candle interval.")
+
+        with self._lock:
+            kite = self._kite
+            index_rows = [
+                dict(row) for row in self._instruments.values()
+                if row.get("exchange") == "NSE" and row.get("segment") == "INDICES"
+            ]
+        if kite is None:
+            raise RuntimeError("Zerodha historical-data client is not ready.")
+
+        token_by_symbol = {
+            str(row.get("symbol") or "").strip().upper(): int(row["instrument_token"])
+            for row in index_rows
+        }
+        result = {}
+        for symbol in sorted(set(str(value).strip().upper() for value in symbols)):
+            token = token_by_symbol.get(symbol)
+            if token is None:
+                result[symbol] = []
+                continue
+            try:
+                result[symbol] = kite.historical_data(
+                    token, start_at, end_at, interval
+                )
+            except Exception:
+                logger.exception(
+                    "Historical %s candles unavailable for index %s",
+                    interval, symbol,
+                )
+                result[symbol] = []
+            # Pace requests to avoid bursting Zerodha's historical endpoint.
+            clock.sleep(0.35)
+        return result
+
     def universe_symbols(self):
         with self._lock:
             return sorted(self._fno_symbols)
