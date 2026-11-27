@@ -58,6 +58,21 @@ class PriceActionService:
                 db.executemany("INSERT INTO price_action_settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", [(k,json.dumps(v)) for k,v in values.items()])
             return self.settings()
 
+    def reset_settings(self):
+        """Restore and persist the strategy's canonical defaults."""
+        with self.lock:
+            if self.running:
+                raise RuntimeError("Stop Price Action Intraday before resetting settings.")
+            self.config = dict(self.DEFAULTS)
+            self.engine.config = self.config
+            with sqlite3.connect(self.db_path) as db:
+                db.execute("DELETE FROM price_action_settings")
+                db.executemany(
+                    "INSERT INTO price_action_settings(key,value) VALUES(?,?)",
+                    [(key, json.dumps(value)) for key, value in self.config.items()],
+                )
+            return self.settings()
+
     def settings(self):
         return {"config": dict(self.config), "live_ready": False, "mode": "PAPER", "live_block_reason": "This strategy supports PAPER simulation only. Broker order placement is not implemented."}
 
