@@ -138,7 +138,7 @@ class OpeningBreakoutStore:
                             deleted = True
                     if kept:
                         temporary = self.recovery_path.with_suffix(self.recovery_path.suffix + ".tmp")
-                        temporary.write_text("\\n".join(kept) + "\\n", encoding="utf-8")
+                        temporary.write_text("\n".join(kept) + "\n", encoding="utf-8")
                         os.replace(temporary, self.recovery_path)
                     else:
                         self.recovery_path.unlink(missing_ok=True)
