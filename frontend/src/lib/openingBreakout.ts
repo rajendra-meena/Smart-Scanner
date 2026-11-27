@@ -17,7 +17,7 @@ function responseError(detail:unknown):string{
 async function call<T>(path:string,init:RequestInit={}):Promise<T>{const r=await fetch("/api/strategies/opening-breakout"+path,{...init,credentials:"include",headers:{"Content-Type":"application/json",...init.headers}});if(!r.ok){const x=await r.json().catch(()=>({}));throw new Error(responseError(x.detail))}return r.json() as Promise<T>}
 export const api={
  status:()=>call<BreakoutStatus>("/status"),
- trades:()=>call<BreakoutTrade[]>("/trades"),
+ trades:(date?:string)=>call<BreakoutTrade[]>(date?`/trades?date=${encodeURIComponent(date)}`:"/trades"),
  settings:()=>call<BreakoutSettings>("/settings"),
  saveSettings:(config:BreakoutConfig)=>call<BreakoutSettings>("/settings",{method:"PUT",body:JSON.stringify(config)}),
  setMode:(mode:"PAPER"|"LIVE")=>call<BreakoutSettings>("/mode",{method:"PUT",body:JSON.stringify({mode})}),
