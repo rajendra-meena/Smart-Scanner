@@ -38,6 +38,7 @@ class PriceActionService:
         self.positions = {}
         self.pending = {}
         self.option_meta = {}
+        self.latest_option_quotes = {}
         self.events = []
         self.started_day = None
         self._squareoff_timer = None
@@ -74,6 +75,7 @@ class PriceActionService:
             self.positions.clear()
             self.pending.clear()
             self.option_meta.clear()
+            self.latest_option_quotes.clear()
             self.events = [{"time": now.isoformat(), "event": "PAPER_STARTED", "detail": "Price Action Intraday started from live Zerodha ticks"}]
             seconds = max(0, (datetime.combine(now.date(), exit_time, tzinfo=IST)-now).total_seconds())
             self._squareoff_timer = Timer(seconds, self.stop)
@@ -89,10 +91,9 @@ class PriceActionService:
                 self.events.append({"time": now.isoformat(), "event": "PENDING_CANCELLED", "symbol": item["symbol"], "reason": "STRATEGY_STOP"})
             for pos in list(self.positions.values()):
                 if pos["status"] == "OPEN":
-                    tick = self.market_data.snapshot()
-                    option = next((r for r in tick.get("all_futures", []) if r.get("instrument_token")==pos["token"]), None)
-                    if option:
-                        self._close(pos, float(option.get("last_price") or pos["entry_price"]), "MANUAL_OR_TIME_EXIT", now)
+                    quote = self.latest_option_quotes.get(pos["token"])
+                    if quote and (now - quote["received_at"]).total_seconds() <= 5:
+                        self._close(pos, quote.get("bid"), "MANUAL_OR_TIME_EXIT", now)
                     else:
                         self._close(pos, None, "EXIT_UNPRICED", now)
             self.running = False
@@ -160,6 +161,7 @@ class PriceActionService:
         ask = float(asks[0].get("price") or 0) if asks else 0
         if bid <= 0 or ask <= 0 or ask < bid:
             return
+        self.latest_option_quotes[token] = {"bid": bid, "ask": ask, "received_at": now}
         spread = (ask-bid)/((ask+bid)/2)*100
         if spread > float(self.config["max_spread_percent"]):
             return
