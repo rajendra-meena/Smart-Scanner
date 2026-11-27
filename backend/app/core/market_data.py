@@ -196,6 +196,10 @@ class MarketDataEngine:
                 "total": len(equity), "advance_decline_ratio": round(advances/declines, 2) if declines else None}
         if changed:
             try:
+                opening_breakout_service.on_feed_connected()
+            except Exception:
+                logger.exception("Unable to restore Opening Breakout open-position subscriptions")
+            try:
                 opening_breakout_service.on_market_tick(changed)
             except Exception:
                 logger.exception("Opening breakout tick processing failed")
