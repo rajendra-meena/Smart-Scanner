@@ -304,6 +304,15 @@ class OpeningBreakoutService:
                 continue
             self._close_paper(position, bid, reason, now)
 
+    def _persist_open_position(self, position):
+        """Persist the current OPEN PAPER position without closing its lifecycle."""
+        return self.store.save_trade({
+            "id": position["id"],
+            "trade_date": datetime.now(IST).date().isoformat(),
+            "symbol": position["symbol"],
+            **position,
+        })
+
     def _record_unpriced_feed_exit(
         self, position, now, exit_reason="FEED_GUARD_EXIT"
     ):
