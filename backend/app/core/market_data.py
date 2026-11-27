@@ -113,6 +113,12 @@ class MarketDataEngine:
             if full_tokens:
                 ws.set_mode(ws.MODE_FULL, full_tokens)
         self._set_status("connected")
+        # Restore subscriptions for persisted Price Action PAPER positions after
+        # a backend/websocket restart. The service keeps positions in SQLite.
+        try:
+            price_action_service.on_feed_connected()
+        except Exception:
+            logger.exception("Unable to restore Price Action open-position subscriptions")
         logger.info("KiteTicker connected; subscribed to %s instruments", len(tokens))
 
     def _on_ticks(self, ws, ticks):
