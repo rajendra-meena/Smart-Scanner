@@ -137,7 +137,6 @@ class OpeningBreakoutService:
                 trade for trade in self.store.trades()
                 if trade.get("mode") == "PAPER"
                 and trade.get("status") == "OPEN"
-                and trade.get("id") not in self.positions
             ]
             if not unresolved:
                 return {"restored": 0, "unresolved": 0}
