@@ -98,3 +98,20 @@ def test_closed_position_is_removed_from_active_positions_table(tmp_path, monkey
     with sqlite3.connect(db_path) as db:
         assert db.execute("SELECT COUNT(*) FROM price_action_open_positions").fetchone()[0] == 0
         assert db.execute("SELECT COUNT(*) FROM price_action_trades").fetchone()[0] == 1
+
+def test_snapshot_reports_total_capital_used_only_for_open_positions(tmp_path, monkeypatch):
+    db_path = tmp_path / "price_action_trades.sqlite3"
+    with sqlite3.connect(db_path) as db:
+        db.execute("CREATE TABLE price_action_trades (id TEXT PRIMARY KEY, trade_date TEXT NOT NULL, payload TEXT NOT NULL)")
+        db.execute("CREATE TABLE price_action_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+        db.execute("CREATE TABLE price_action_open_positions (id TEXT PRIMARY KEY, payload TEXT NOT NULL, updated_at TEXT NOT NULL)")
+    monkeypatch.setattr(service_module, "Path", lambda _: db_path)
+    service = PriceActionService(FakeMarketData())
+    service.positions = {
+        "open-1": {"id": "open-1", "status": "OPEN", "entry_price": 5.75, "quantity": 5000, "pnl": 2250},
+        "open-2": {"id": "open-2", "status": "OPEN", "entry_price": 85.0, "quantity": 225, "pnl": -180},
+        "closed-1": {"id": "closed-1", "status": "CLOSED", "entry_price": 100.0, "quantity": 100, "pnl": 500},
+    }
+
+    assert service.snapshot()["open_capital_used"] == 62500.0
+    assert service.snapshot()["open_pnl"] == 2070.0
