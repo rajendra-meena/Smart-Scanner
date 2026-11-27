@@ -202,10 +202,9 @@ class BreakfastService:
                 result = self._build_selection(now)
                 if result and result.get("ready"):
                     self._queue_candidates(result, now)
-            if self.running:
-                self._monitor_equity_positions(rows, now)
-                if now.time() >= time.fromisoformat(self.config["exit_time"]):
-                    self.stop()
+            self._monitor_equity_positions(rows, now)
+            if self.running and now.time() >= time.fromisoformat(self.config["exit_time"]):
+                self.stop()
 
     def _queue_candidates(self, result, now):
         max_positions = int(self.config["max_positions"])
