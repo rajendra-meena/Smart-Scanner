@@ -193,18 +193,26 @@ class MarketRegimeEngine:
 
     @staticmethod
     def _atr_series(candles, period=14):
-        """Return a simple ATR series aligned to completed candles."""
+        """Return Wilder's ATR(14) series aligned to completed candles."""
         rows = list(candles)
         result = [None] * len(rows)
         true_ranges = []
-        for previous, current in zip(rows, rows[1:]):
-            true_ranges.append(max(
+        previous_atr = None
+        for index, (previous, current) in enumerate(zip(rows, rows[1:]), start=1):
+            true_range = max(
                 current["high"] - current["low"],
                 abs(current["high"] - previous["close"]),
                 abs(current["low"] - previous["close"]),
-            ))
-            if len(true_ranges) >= period:
-                result[len(true_ranges)] = sum(true_ranges[-period:]) / period
+            )
+            true_ranges.append(true_range)
+            if len(true_ranges) == period:
+                previous_atr = sum(true_ranges) / period
+                result[index] = previous_atr
+            elif len(true_ranges) > period:
+                previous_atr = (
+                    previous_atr * (period - 1) + true_range
+                ) / period
+                result[index] = previous_atr
         return result
 
     @staticmethod
