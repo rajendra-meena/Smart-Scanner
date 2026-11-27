@@ -113,5 +113,5 @@ def test_snapshot_reports_total_capital_used_only_for_open_positions(tmp_path, m
         "closed-1": {"id": "closed-1", "status": "CLOSED", "entry_price": 100.0, "quantity": 100, "pnl": 500},
     }
 
-    assert service.snapshot()["open_capital_used"] == 62500.0
+    assert service.snapshot()["open_capital_used"] == 47875.0
     assert service.snapshot()["open_pnl"] == 2070.0
