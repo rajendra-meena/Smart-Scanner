@@ -162,9 +162,9 @@ class PriceActionService:
                 quote = self.latest_option_quotes.get(pos["token"])
                 if not quote or (now - quote["received_at"]).total_seconds() > 5:
                     pos["quote_stale"] = True
-                    if token not in self._stale_option_notified:
+                    if pos["token"] not in self._stale_option_notified:
                         self.events.append({"time": now.isoformat(), "event": "OPTION_QUOTE_STALE", "reason": "Waiting for next valid option quote; strategy remains active", "symbol": pos["symbol"]})
-                        self._stale_option_notified.add(token)
+                        self._stale_option_notified.add(pos["token"])
                 else:
                     pos["quote_stale"] = False
             self._watchdog_timer = None
