@@ -270,3 +270,17 @@ def test_relative_atr_filter_fails_closed_without_twenty_session_baseline():
     state = engine._volatility_state(rows[-100:], current)
     assert state["status"] == "UNKNOWN"
     assert "prior sessions" in state["reason"]
+
+
+
+def test_dashboard_snapshot_includes_all_registered_sector_indices():
+    engine = MarketRegimeEngine()
+    required = engine.indices_for_symbols(["INFY", "RELIANCE", "MARUTI"])
+    engine.register_indices(required)
+
+    snapshot = engine.snapshot()
+
+    assert snapshot["required_indices"] == required
+    assert "NIFTY IT" in snapshot["indices"]
+    assert "NIFTY OIL AND GAS" in snapshot["indices"]
+    assert "NIFTY AUTO" in snapshot["indices"]
