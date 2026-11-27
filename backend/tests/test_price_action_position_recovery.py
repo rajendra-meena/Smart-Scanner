@@ -115,3 +115,78 @@ def test_snapshot_reports_total_capital_used_only_for_open_positions(tmp_path, m
 
     assert service.snapshot()["open_capital_used"] == 47875.0
     assert service.snapshot()["open_pnl"] == 2070.0
+
+
+
+def _new_service_with_position(tmp_path, monkeypatch):
+    db_path = tmp_path / "price_action_trades.sqlite3"
+    monkeypatch.setattr(service_module, "Path", lambda _: db_path)
+    market = FakeMarketData()
+    service = PriceActionService(market)
+    position = {
+        "id": "pending-exit-1", "strategy": "PRICE_ACTION_INTRADAY",
+        "symbol": "HCLTECH", "option_symbol": "HCLTECH26DEC1600CE",
+        "direction": "CE", "mode": "PAPER", "status": "OPEN",
+        "token": 555001, "quantity": 10, "entry_price": 10.0,
+        "stop_price": 8.5, "target_price": 13.0, "bid": 9.8,
+        "ask": 9.9, "ltp": 9.85, "pnl": -2.0,
+        "opened_at": datetime.now(IST).isoformat(),
+    }
+    service.positions[position["id"]] = position
+    service._persist_open_position(position)
+    return service, position, db_path
+
+
+def test_stop_retains_open_position_when_option_quote_is_stale(tmp_path, monkeypatch):
+    service, position, db_path = _new_service_with_position(tmp_path, monkeypatch)
+    service.running = True
+    service.latest_option_quotes = {}
+    monkeypatch.setattr(service, "_schedule_watchdog", lambda: None)
+
+    service.stop()
+
+    assert service.running is False
+    assert position["status"] == "OPEN"
+    assert position["exit_requested"] is True
+    assert position["quote_stale"] is True
+    assert service.events[-2]["event"] == "EXIT_WAITING_FOR_FRESH_QUOTE"
+    with sqlite3.connect(db_path) as db:
+        assert db.execute("SELECT COUNT(*) FROM price_action_open_positions").fetchone()[0] == 1
+        assert db.execute("SELECT COUNT(*) FROM price_action_trades").fetchone()[0] == 0
+
+
+def test_requested_exit_completes_only_after_fresh_valid_option_bid(tmp_path, monkeypatch):
+    service, position, db_path = _new_service_with_position(tmp_path, monkeypatch)
+    position["exit_requested"] = True
+    now = datetime.now(IST)
+    row = {
+        "instrument_token": 555001,
+        "last_price": 8.02,
+        "depth": {
+            "buy": [{"price": 8.0}],
+            "sell": [{"price": 8.05}],
+        },
+    }
+
+    service._on_option_tick(row, now)
+
+    assert position["status"] == "CLOSED"
+    assert position["exit_reason"] == "MANUAL_OR_TIME_EXIT"
+    assert position["exit_price"] == 8.0
+    with sqlite3.connect(db_path) as db:
+        assert db.execute("SELECT COUNT(*) FROM price_action_open_positions").fetchone()[0] == 0
+        assert db.execute("SELECT COUNT(*) FROM price_action_trades").fetchone()[0] == 1
+
+
+def test_open_positions_continue_receiving_option_ticks_after_strategy_disabled(tmp_path, monkeypatch):
+    service, position, _ = _new_service_with_position(tmp_path, monkeypatch)
+    service.running = False
+    service.config["enabled"] = False
+    received = []
+    monkeypatch.setattr(service, "_on_option_tick", lambda row, now: received.append(row))
+
+    row = {"instrument_type": "CE", "instrument_token": 555001}
+    service.on_market_tick([row])
+
+    assert received == [row]
+    assert position["status"] == "OPEN"
