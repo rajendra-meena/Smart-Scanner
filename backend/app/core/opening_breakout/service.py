@@ -41,6 +41,8 @@ class OpeningBreakoutService:
         self._pending_quote_started = {}
         self._exit_timer = None
         self._watchdog_timer = None
+        self._auto_start_attempted_day = None
+        self._auto_start_suppressed_day = None
 
     def configure(self, values):
         with self.lock:
@@ -362,6 +364,7 @@ class OpeningBreakoutService:
             self._record_unpriced_feed_exit(position, now)
 
         self.running = False
+        self._auto_start_suppressed_day = now.date().isoformat()
 
         if self._exit_timer:
             self._exit_timer.cancel()
@@ -383,8 +386,29 @@ class OpeningBreakoutService:
             return
 
         with self.lock:
+            today = now.date().isoformat()
             if not self.running:
-                return
+                exit_time = self._exit_clock_time()
+                auto_start_window = time(9, 15, 30) <= now.time() < exit_time
+                if (
+                    self.config.auto_start
+                    and self.selected_mode == "PAPER"
+                    and auto_start_window
+                    and self._auto_start_attempted_day != today
+                    and self._auto_start_suppressed_day != today
+                ):
+                    try:
+                        self.start("PAPER", access_token=None)
+                        self._auto_start_attempted_day = today
+                    except RuntimeError as exc:
+                        self._auto_start_attempted_day = today
+                        self.events.append({
+                            "time": now.isoformat(),
+                            "event": "AUTO_START_FAILED",
+                            "reason": str(exc),
+                        })
+                if not self.running:
+                    return
 
             if now.date().isoformat() != self._day:
                 self._cancel_pending_entries(now, "TRADING_DAY_CHANGED")
@@ -684,6 +708,7 @@ class OpeningBreakoutService:
     def stop(self):
         with self.lock:
             now = datetime.now(IST)
+            self._auto_start_suppressed_day = now.date().isoformat()
             self.running = False
             self._cancel_pending_entries(now, "MANUAL_STOP")
             self._exit_open_paper_positions(now, "MANUAL_STOP")
