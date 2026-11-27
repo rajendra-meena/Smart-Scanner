@@ -12,6 +12,10 @@ class MarketRegimeEngine:
     REQUIRED_INDICES = ("NIFTY 50", "NIFTY BANK")
     MIN_CANDLES = 50
     FRESH_SECONDS = 10.0
+    ATR_PERIOD = 14
+    VOLATILITY_BASELINE_SESSIONS = 20
+    HIGH_VOLATILITY_MULTIPLIER = 1.5
+    HIGH_VOLATILITY_CONFIRMATION_CANDLES = 2
 
     # Explicit mappings only: an unmapped underlying is blocked rather than
     # silently trading without its sector confirmation.
@@ -48,8 +52,8 @@ class MarketRegimeEngine:
             self.active_indices = requested
             self.candles = {
                 symbol: {
-                    "5minute": deque(maxlen=500),
-                    "15minute": deque(maxlen=300),
+                    "5minute": deque(maxlen=2000),
+                    "15minute": deque(maxlen=500),
                 }
                 for symbol in requested
             }
@@ -187,9 +191,136 @@ class MarketRegimeEngine:
             }
         return {"direction": "MIXED", "reason": "Price and EMA alignment disagree"}
 
+    @staticmethod
+    def _atr_series(candles, period=14):
+        """Return a simple ATR series aligned to completed candles."""
+        rows = list(candles)
+        result = [None] * len(rows)
+        true_ranges = []
+        for previous, current in zip(rows, rows[1:]):
+            true_ranges.append(max(
+                current["high"] - current["low"],
+                abs(current["high"] - previous["close"]),
+                abs(current["low"] - previous["close"]),
+            ))
+            if len(true_ranges) >= period:
+                result[len(true_ranges)] = sum(true_ranges[-period:]) / period
+        return result
+
+    @staticmethod
+    def _session_slot(stamp):
+        # NSE regular session starts at 09:15; 5-minute slots are 0..74.
+        minutes = stamp.hour * 60 + stamp.minute - (9 * 60 + 15)
+        return minutes // 5 if 0 <= minutes < 375 else None
+
+    def _volatility_state(self, candles):
+        """Compare the latest two completed 5m ATR readings with the same
+        time-of-day ATR median from the preceding 20 trading sessions.
+        Missing baseline data is UNKNOWN and therefore blocks new entries.
+        """
+        rows = list(candles)
+        atr_values = self._atr_series(rows, self.ATR_PERIOD)
+        if len(rows) < 2:
+            return {
+                "status": "UNKNOWN",
+                "reason": "Waiting for two completed 5-minute candles",
+                "atr": None, "baseline_atr": None, "ratio": None,
+                "multiplier": self.HIGH_VOLATILITY_MULTIPLIER,
+                "baseline_sessions": 0,
+                "confirmation_candles": self.HIGH_VOLATILITY_CONFIRMATION_CANDLES,
+            }
+
+        latest_two = rows[-self.HIGH_VOLATILITY_CONFIRMATION_CANDLES:]
+        if len(latest_two) < self.HIGH_VOLATILITY_CONFIRMATION_CANDLES:
+            return {
+                "status": "UNKNOWN",
+                "reason": "Waiting for two completed 5-minute candles",
+                "atr": None, "baseline_atr": None, "ratio": None,
+                "multiplier": self.HIGH_VOLATILITY_MULTIPLIER,
+                "baseline_sessions": 0,
+                "confirmation_candles": self.HIGH_VOLATILITY_CONFIRMATION_CANDLES,
+            }
+
+        ratios = []
+        latest_atr = baseline_atr = None
+        sessions_used = 0
+        for row in latest_two:
+            index = rows.index(row)
+            atr = atr_values[index]
+            slot = self._session_slot(row["date"])
+            if atr is None or slot is None:
+                return {
+                    "status": "UNKNOWN",
+                    "reason": "ATR or NSE session slot is unavailable",
+                    "atr": atr, "baseline_atr": None, "ratio": None,
+                    "multiplier": self.HIGH_VOLATILITY_MULTIPLIER,
+                    "baseline_sessions": 0,
+                    "confirmation_candles": self.HIGH_VOLATILITY_CONFIRMATION_CANDLES,
+                }
+
+            target_date = row["date"].date()
+            by_date = {}
+            for prior_index, prior in enumerate(rows[:index]):
+                prior_date = prior["date"].date()
+                if prior_date >= target_date or self._session_slot(prior["date"]) != slot:
+                    continue
+                prior_atr = atr_values[prior_index]
+                if prior_atr is not None:
+                    by_date[prior_date] = prior_atr
+            prior_values = [by_date[day] for day in sorted(by_date)[-self.VOLATILITY_BASELINE_SESSIONS:]]
+            if len(prior_values) < self.VOLATILITY_BASELINE_SESSIONS:
+                return {
+                    "status": "UNKNOWN",
+                    "reason": (
+                        f"Need {self.VOLATILITY_BASELINE_SESSIONS} prior sessions "
+                        f"for the same 5-minute time slot; received {len(prior_values)}"
+                    ),
+                    "atr": round(atr, 4), "baseline_atr": None, "ratio": None,
+                    "multiplier": self.HIGH_VOLATILITY_MULTIPLIER,
+                    "baseline_sessions": len(prior_values),
+                    "confirmation_candles": self.HIGH_VOLATILITY_CONFIRMATION_CANDLES,
+                }
+            baseline = sorted(prior_values)[len(prior_values) // 2]
+            if len(prior_values) % 2 == 0:
+                baseline = (baseline + sorted(prior_values)[len(prior_values) // 2 - 1]) / 2
+            if baseline <= 0:
+                return {
+                    "status": "UNKNOWN", "reason": "Historical ATR baseline is zero",
+                    "atr": round(atr, 4), "baseline_atr": round(baseline, 4),
+                    "ratio": None, "multiplier": self.HIGH_VOLATILITY_MULTIPLIER,
+                    "baseline_sessions": len(prior_values),
+                    "confirmation_candles": self.HIGH_VOLATILITY_CONFIRMATION_CANDLES,
+                }
+            ratios.append(atr / baseline)
+            latest_atr, baseline_atr = atr, baseline
+            sessions_used = min(sessions_used or len(prior_values), len(prior_values))
+
+        high_count = sum(value > self.HIGH_VOLATILITY_MULTIPLIER for value in ratios)
+        status = (
+            "HIGH" if high_count == self.HIGH_VOLATILITY_CONFIRMATION_CANDLES
+            else "NORMAL"
+        )
+        return {
+            "status": status,
+            "reason": (
+                f"ATR exceeded {self.HIGH_VOLATILITY_MULTIPLIER}x same-slot baseline "
+                f"for {high_count}/{self.HIGH_VOLATILITY_CONFIRMATION_CANDLES} completed candles"
+                if status == "HIGH"
+                else "ATR is within the relative-volatility limit"
+            ),
+            "atr": round(latest_atr, 4),
+            "baseline_atr": round(baseline_atr, 4),
+            "ratio": round(ratios[-1], 3),
+            "ratios": [round(value, 3) for value in ratios],
+            "multiplier": self.HIGH_VOLATILITY_MULTIPLIER,
+            "baseline_sessions": sessions_used,
+            "confirmation_candles": self.HIGH_VOLATILITY_CONFIRMATION_CANDLES,
+        }
+
     def _refresh_state(self, symbol):
         five = self._timeframe_state(self.candles[symbol]["5minute"])
         fifteen = self._timeframe_state(self.candles[symbol]["15minute"])
+        volatility = self._volatility_state(self.candles[symbol]["5minute"])
         regime = "UNKNOWN"
         reason = "Both 5m and 15m index trends must be available and aligned"
         if "SIDEWAYS" in (five["direction"], fifteen["direction"]):
@@ -203,6 +334,7 @@ class MarketRegimeEngine:
             "reason": reason,
             "5m": five,
             "15m": fifteen,
+            "volatility": volatility,
             "last_close_5m": list(self.candles[symbol]["5minute"])[-1]["close"] if self.candles[symbol]["5minute"] else None,
             "last_close_15m": list(self.candles[symbol]["15minute"])[-1]["close"] if self.candles[symbol]["15minute"] else None,
         }
@@ -258,6 +390,7 @@ class MarketRegimeEngine:
                     "tick_age_seconds": round(age, 2) if age is not None else None,
                 }
         regimes = [indices[symbol]["regime"] for symbol in required]
+        volatilities = [indices[symbol].get("volatility", {}).get("status", "UNKNOWN") for symbol in required]
         if not all(indices[symbol]["feed_fresh"] for symbol in required):
             overall, reason = "UNKNOWN", "Fresh live ticks are required for every market and sector index"
         elif "SIDEWAYS" in regimes:
@@ -272,9 +405,17 @@ class MarketRegimeEngine:
             overall, reason = "BEARISH", "All required indices confirm bearish direction"
         else:
             overall, reason = "MIXED", "Required index directions do not agree"
+        if "HIGH" in volatilities:
+            volatility, volatility_reason = "HIGH", "At least one required index has confirmed high volatility"
+        elif "UNKNOWN" in volatilities:
+            volatility, volatility_reason = "UNKNOWN", "Volatility baseline or two-candle confirmation is unavailable"
+        else:
+            volatility, volatility_reason = "NORMAL", "All required indices are within the volatility limit"
         return {
             "regime": overall,
             "reason": reason,
+            "volatility": volatility,
+            "volatility_reason": volatility_reason,
             "required_indices": required,
             "indices": indices,
         }
@@ -283,7 +424,8 @@ class MarketRegimeEngine:
         if not underlying_symbol:
             snapshot = self.snapshot()
             required = "BULLISH" if str(direction).upper() == "CE" else "BEARISH"
-            return snapshot["regime"] == required, snapshot
+            allowed = snapshot["regime"] == required and snapshot.get("volatility") == "NORMAL"
+            return allowed, snapshot
         sector = self.sector_index_for_symbol(underlying_symbol)
         if not sector:
             return False, {
@@ -294,4 +436,5 @@ class MarketRegimeEngine:
             }
         snapshot = self.snapshot(underlying_symbol)
         required = "BULLISH" if str(direction).upper() == "CE" else "BEARISH"
-        return snapshot["regime"] == required, snapshot
+        allowed = snapshot["regime"] == required and snapshot.get("volatility") == "NORMAL"
+        return allowed, snapshot
