@@ -451,13 +451,14 @@ class OpeningBreakoutService:
                     for p in self.positions.values()
                     if p.get("status") == "OPEN"
                 }
-                for row in rows:
-                    if (
-                        row.get("instrument_type") in ("CE", "PE")
-                        and int(row.get("instrument_token") or 0) in open_tokens
-                    ):
-                        self._handle_option_tick(row, now)
-                return
+                if open_tokens:
+                    for row in rows:
+                        if (
+                            row.get("instrument_type") in ("CE", "PE")
+                            and int(row.get("instrument_token") or 0) in open_tokens
+                        ):
+                            self._handle_option_tick(row, now)
+                    return
 
             today = now.date().isoformat()
             if not self.running:
