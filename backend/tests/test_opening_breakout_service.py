@@ -513,6 +513,9 @@ def test_manual_stop_cancels_pending_and_closes_open_position(service_env):
 
     add_pending_entry(service, token=101)
     position = add_open_position(service, token=202)
+    service._last_option_ticks[202] = option_tick(
+        202, ltp=96.0, bid=95.5, ask=95.8
+    )
 
     service.running = True
     watchdog = FakeTimer(1, service._watchdog_tick)
