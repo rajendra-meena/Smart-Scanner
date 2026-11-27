@@ -61,3 +61,7 @@ def test_tick_builder_only_analyzes_after_minute_closes():
     assert engine.on_tick({"symbol": "ABC", "last_price": 101, "volume": 12}, now + timedelta(seconds=20)) is None
     assert engine.current["ABC"]["high"] == 101
     assert engine.current["ABC"]["close"] == 101
+    assert engine.current["ABC"]["volume"] == 2
+    assert engine.on_tick({"symbol": "ABC", "last_price": 102, "volume": 15}, now + timedelta(minutes=1)) is None
+    assert engine.current["ABC"]["volume_start"] == 12
+    assert engine.current["ABC"]["volume"] == 3
