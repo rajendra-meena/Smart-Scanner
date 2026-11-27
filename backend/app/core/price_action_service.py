@@ -16,7 +16,7 @@ class PriceActionService:
     DEFAULTS = {
         "enabled": True, "auto_start": True, "mode": "PAPER",
         "max_positions": 3, "max_trades_per_day": 5,
-        "stop_loss_points": 15.0, "risk_reward": 2.0,
+        "stop_loss_percent": 15.0, "risk_reward": 2.0,
         "max_spread_percent": 1.0, "volume_filter": False,
         "volume_multiplier": 1.2, "exit_time": "15:15:00",
         "max_daily_loss": 1500.0, "gainers_count": 20, "losers_count": 20,
@@ -244,6 +244,20 @@ class PriceActionService:
         self.pending[token] = {**signal,"token":token,"option_symbol":contract["tradingsymbol"],"lot_size":int(contract.get("lot_size") or 0),"requested_at":now.isoformat()}
         self.option_meta[token] = contract
         self.events.append({"time":now.isoformat(),"event":"PRICE_ACTION_SIGNAL","symbol":signal["symbol"],"direction":signal["direction"],"reasons":signal["reasons"],"option":contract["tradingsymbol"]})
+
+    @staticmethod
+    def _premium_levels(entry_price, stop_loss_percent, risk_reward):
+        """Calculate positive, tick-aligned option-premium SL/target from entry risk."""
+        entry = float(entry_price)
+        if entry <= 0 or not 0 < float(stop_loss_percent) < 100 or float(risk_reward) < 1:
+            raise ValueError("Invalid option entry price or risk settings.")
+        tick = 0.05
+        raw_stop = entry * (1 - float(stop_loss_percent) / 100)
+        stop = max(tick, round(round(raw_stop / tick) * tick, 2))
+        risk = max(tick, entry - stop)
+        raw_target = entry + risk * float(risk_reward)
+        target = round(round(raw_target / tick) * tick, 2)
+        return stop, target
 
     def _on_option_tick(self, row, now):
         token = int(row["instrument_token"])
