@@ -84,6 +84,14 @@ def manual_exit(position_id: str, current=Depends(get_current_session)):
     except RuntimeError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
+
+@router.delete("/trades/{trade_id}")
+def delete_trade(trade_id: str, current=Depends(get_current_session)):
+    try:
+        return price_action_service.delete_trade(trade_id)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
 @router.get("/trades")
 def trades(trade_date: date | None = Query(default=None, alias="date"), current=Depends(get_current_session)):
     return price_action_service.trades(trade_date.isoformat() if trade_date else None)
