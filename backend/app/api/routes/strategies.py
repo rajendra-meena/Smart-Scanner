@@ -78,6 +78,16 @@ def trades(
     )
 
 
+@router.delete("/trades/{trade_id}")
+def delete_trade(trade_id: str, current=Depends(get_current_session)):
+    try:
+        return opening_breakout_service.delete_trade(trade_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
 @router.put("/config")
 def configure(payload: ConfigRequest, current=Depends(get_current_session)):
     try:
