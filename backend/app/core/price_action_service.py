@@ -30,12 +30,18 @@ class PriceActionService:
         with sqlite3.connect(self.db_path) as db:
             db.execute("CREATE TABLE IF NOT EXISTS price_action_trades (id TEXT PRIMARY KEY, trade_date TEXT NOT NULL, payload TEXT NOT NULL)")
             db.execute("CREATE TABLE IF NOT EXISTS price_action_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+            db.execute("CREATE TABLE IF NOT EXISTS price_action_open_positions (id TEXT PRIMARY KEY, payload TEXT NOT NULL, updated_at TEXT NOT NULL)")
         with sqlite3.connect(self.db_path) as db:
             saved = {k: json.loads(v) for k, v in db.execute("SELECT key,value FROM price_action_settings")}
+            restored_positions = [json.loads(row[0]) for row in db.execute("SELECT payload FROM price_action_open_positions")]
         self.config = {**self.DEFAULTS, **saved}
         self.engine = PriceActionEngine(self.config)
         self.running = False
-        self.positions = {}
+        self.positions = {str(p["id"]): p for p in restored_positions if p.get("status") == "OPEN"}
+        for position in self.positions.values():
+            position["token"] = int(position["token"])
+            position["quote_stale"] = True
+        self.recovery_mode = bool(self.positions)
         self.pending = {}
         self.option_meta = {}
         self.latest_option_quotes = {}
@@ -47,6 +53,41 @@ class PriceActionService:
         self.allowed_symbols = set()
         self._feed_stale_notified = False
         self._stale_option_notified = set()
+
+    def _persist_open_position(self, position):
+        """Durably save an active PAPER position so process restarts cannot erase it."""
+        with sqlite3.connect(self.db_path) as db:
+            db.execute(
+                "INSERT INTO price_action_open_positions(id,payload,updated_at) VALUES(?,?,?) "
+                "ON CONFLICT(id) DO UPDATE SET payload=excluded.payload, updated_at=excluded.updated_at",
+                (position["id"], json.dumps(position, default=str), datetime.now(IST).isoformat()),
+            )
+
+    def on_feed_connected(self):
+        """Re-subscribe restored option positions after the Zerodha websocket reconnects."""
+        with self.lock:
+            tokens = sorted({int(p["token"]) for p in self.positions.values() if p.get("status") == "OPEN"})
+            if not tokens:
+                return
+            try:
+                if self.market_data.subscribe_extra(tokens, full=True):
+                    self.events.append({
+                        "time": datetime.now(IST).isoformat(),
+                        "event": "OPEN_POSITIONS_RESTORED",
+                        "detail": f"Resubscribed to {len(tokens)} recovered PAPER option position(s); waiting for fresh quotes",
+                    })
+                else:
+                    self.events.append({
+                        "time": datetime.now(IST).isoformat(),
+                        "event": "OPEN_POSITION_RESTORE_SUBSCRIPTION_FAILED",
+                        "detail": "Could not resubscribe restored option positions; positions remain saved and visible",
+                    })
+            except Exception as exc:
+                self.events.append({
+                    "time": datetime.now(IST).isoformat(),
+                    "event": "OPEN_POSITION_RESTORE_SUBSCRIPTION_FAILED",
+                    "reason": str(exc),
+                })
 
     def save_settings(self, values):
         with self.lock:
@@ -109,7 +150,8 @@ class PriceActionService:
                 "time": now.isoformat(), "event": "HISTORICAL_BASELINE_LOADED",
                 "detail": f"{seeded} completed Zerodha one-minute candles loaded across {len(self.allowed_symbols)} stocks"
             }]
-            self.positions.clear()
+            # Preserve recovered open positions when manually restarting the strategy.
+            # Pending entries are intentionally discarded: they were not filled yet.
             self.pending.clear()
             self.option_meta.clear()
             self.latest_option_quotes.clear()
@@ -214,15 +256,17 @@ class PriceActionService:
             if not self.running and self.config["auto_start"] and self.config["mode"] == "PAPER" and time(9,20) <= now.time() < time.fromisoformat(self.config["exit_time"]) and self._attempted_day != now.date().isoformat():
                 self._attempted_day = now.date().isoformat()
                 Thread(target=self._auto_start_worker, daemon=True, name="price-action-auto-start").start()
-            if not self.running:
+            # Existing PAPER positions must keep receiving SL/target monitoring
+            # after a backend restart, even before the strategy is manually restarted.
+            if not self.running and not self.positions:
                 return
-            if not self.market_data.is_feed_fresh(5) or now.date().isoformat() != self.started_day:
+            if not self.market_data.is_feed_fresh(5):
                 return
             for row in rows:
                 kind = row.get("instrument_type")
                 if kind in ("CE","PE"):
                     self._on_option_tick(row, now)
-                elif kind == "EQ" and str(row.get("symbol") or "").upper() in self.allowed_symbols:
+                elif self.running and kind == "EQ" and str(row.get("symbol") or "").upper() in self.allowed_symbols:
                     signal = self.engine.on_tick(row, now)
                     if signal:
                         self._queue_option(signal, now)
@@ -316,12 +360,14 @@ class PriceActionService:
             sl, target = self._premium_levels(entry, float(self.config["stop_loss_percent"]), float(self.config["risk_reward"]))
             pos = {"id":str(uuid4()),"strategy":"PRICE_ACTION_INTRADAY","symbol":item["symbol"],"option_symbol":item["option_symbol"],"direction":item["direction"],"mode":"PAPER","status":"OPEN","token":token,"quantity":qty,"entry_price":entry,"stop_price":sl,"target_price":target,"ltp":float(row.get("last_price") or ask),"bid":bid,"ask":ask,"opened_at":now.isoformat(),"signal_reasons":item["reasons"],"pnl":0.0}
             self.positions[pos["id"]]=pos
+            self._persist_open_position(pos)
             self.pending.pop(token,None)
             self.events.append({"time":now.isoformat(),"event":"PAPER_ENTRY","symbol":item["symbol"],"option":item["option_symbol"],"entry":entry,"stop":sl,"target":target,"quantity":qty})
             return
         pos = next((p for p in self.positions.values() if p["token"]==token and p["status"]=="OPEN"),None)
         if not pos:return
         pos.update(ltp=float(row.get("last_price") or 0),bid=bid,ask=ask,pnl=round((bid-pos["entry_price"])*pos["quantity"],2),quote_stale=False)
+        self._persist_open_position(pos)
         self._stale_option_notified.discard(token)
         if bid <= pos["stop_price"]: self._close(pos,bid,"STOP_LOSS",now)
         elif bid >= pos["target_price"]: self._close(pos,bid,"TARGET",now)
@@ -330,7 +376,9 @@ class PriceActionService:
         if pos["status"]!="OPEN":return
         pos.update(status="CLOSED" if price is not None else "CLOSED_UNPRICED",exit_price=price,exit_reason=reason,closed_at=now.isoformat(),pnl=round((price-pos["entry_price"])*pos["quantity"],2) if price is not None else None)
         trade={**pos,"trade_date":now.date().isoformat()}
-        with sqlite3.connect(self.db_path) as db:db.execute("INSERT OR REPLACE INTO price_action_trades VALUES(?,?,?)",(pos["id"],trade["trade_date"],json.dumps(trade,default=str)))
+        with sqlite3.connect(self.db_path) as db:
+            db.execute("INSERT OR REPLACE INTO price_action_trades VALUES(?,?,?)",(pos["id"],trade["trade_date"],json.dumps(trade,default=str)))
+            db.execute("DELETE FROM price_action_open_positions WHERE id = ?", (pos["id"],))
         self.events.append({"time":now.isoformat(),"event":"PAPER_EXIT","symbol":pos["symbol"],"reason":reason,"pnl":pos["pnl"]})
 
     def delete_trade(self, trade_id):
