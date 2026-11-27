@@ -353,7 +353,11 @@ class OpeningBreakoutService:
 
     def _schedule_watchdog(self):
         """Run feed-health checks independently of incoming market ticks."""
-        if not self.running or self._watchdog_timer is not None:
+        has_open_positions = any(
+            position.get("status") == "OPEN"
+            for position in self.positions.values()
+        )
+        if (not self.running and not has_open_positions) or self._watchdog_timer is not None:
             return
         timer = Timer(1, self._watchdog_tick)
         timer.daemon = True
