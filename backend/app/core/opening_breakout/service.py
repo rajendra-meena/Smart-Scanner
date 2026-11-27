@@ -130,6 +130,128 @@ class OpeningBreakoutService:
         )[:self.config.losers_count]
         self.engine.set_universe(gainers, losers)
 
+    def on_feed_connected(self):
+        """Restore unresolved PAPER positions and resubscribe their option tokens."""
+        with self.lock:
+            unresolved = [
+                trade for trade in self.store.trades()
+                if trade.get("mode") == "PAPER" and trade.get("status") == "OPEN"
+            ]
+            if not unresolved:
+                return {"restored": 0, "unresolved": 0}
+
+            if not self.market_data or not self.market_data.is_feed_fresh(5):
+                self.events.append({
+                    "time": datetime.now(IST).isoformat(),
+                    "event": "OPEN_POSITION_RESTORE_WAITING_FOR_FEED",
+                    "count": len(unresolved),
+                })
+                return {"restored": 0, "unresolved": len(unresolved)}
+
+            snapshot = self.market_data.snapshot()
+            fno = set(self.market_data.universe_symbols())
+            eligible = [
+                row for row in snapshot.get("all_equity", [])
+                if str(row.get("symbol") or "").upper() in fno
+                and row.get("instrument_type") == "EQ"
+                and float(row.get("open") or 0) > 0
+                and float(row.get("close") or 0) > 0
+            ]
+            self.engine.set_universe(eligible, [])
+            self._instrument_rows = self.market_data.option_instruments()
+            instruments = {
+                int(row.get("instrument_token") or 0): row
+                for row in self._instrument_rows
+            }
+
+            restored_tokens = []
+            restored = 0
+            for trade in unresolved:
+                token = int(trade.get("option_token") or 0)
+                contract = instruments.get(token)
+                if not token or not contract:
+                    self.events.append({
+                        "time": datetime.now(IST).isoformat(),
+                        "event": "OPEN_POSITION_RESTORE_BLOCKED",
+                        "symbol": trade.get("symbol"),
+                        "option_symbol": trade.get("option_symbol"),
+                        "reason": "Persisted option token is absent from current instrument master",
+                    })
+                    continue
+
+                position = dict(trade)
+                position["status"] = "OPEN"
+                position.setdefault("mode", "PAPER")
+                position.setdefault("quantity", int(position.get("lot_size") or 0))
+                position.setdefault("entry_count", 1)
+                symbol = str(position.get("symbol") or "").upper()
+                state = self.engine.stocks.get(symbol)
+                if state is None:
+                    self.events.append({
+                        "time": datetime.now(IST).isoformat(),
+                        "event": "OPEN_POSITION_RESTORE_BLOCKED",
+                        "symbol": symbol,
+                        "reason": "Underlying is absent from the current F&O equity universe",
+                    })
+                    continue
+
+                if position.get("trade_date") != datetime.now(IST).date().isoformat():
+                    position["exit_requested"] = True
+                    position["exit_reason"] = "RESTART_AFTER_TRADING_DAY"
+                elif datetime.now(IST).time() >= self._exit_clock_time():
+                    position["exit_requested"] = True
+                    position["exit_reason"] = "TIME_EXIT_AFTER_RESTART"
+
+                self.positions[position["id"]] = position
+                self._option_token_symbols[token] = str(
+                    position.get("option_symbol") or contract.get("tradingsymbol") or ""
+                )
+                state.entry_count = max(
+                    state.entry_count, int(position.get("entry_count") or 1)
+                )
+                state.pending_entry = False
+                state.active_position_id = position["id"]
+                state.traded = state.entry_count >= self.engine.max_entries()
+                restored_tokens.append(token)
+                restored += 1
+
+            if restored_tokens:
+                try:
+                    subscribed = self.market_data.subscribe_extra(
+                        restored_tokens, full=True
+                    )
+                    if subscribed is False:
+                        raise RuntimeError("Market data engine rejected restored option subscriptions.")
+                except Exception as exc:
+                    for token in restored_tokens:
+                        position = next(
+                            (p for p in self.positions.values()
+                             if int(p.get("option_token") or 0) == token),
+                            None,
+                        )
+                        if position:
+                            self.positions.pop(position["id"], None)
+                            state = self.engine.stocks.get(position["symbol"])
+                            if state and state.active_position_id == position["id"]:
+                                state.active_position_id = None
+                    self.events.append({
+                        "time": datetime.now(IST).isoformat(),
+                        "event": "OPEN_POSITION_RESTORE_SUBSCRIPTION_FAILED",
+                        "reason": str(exc),
+                    })
+                    return {"restored": 0, "unresolved": len(unresolved)}
+
+                self.mode = "PAPER"
+                self.running = False
+                self._schedule_watchdog()
+                self.events.append({
+                    "time": datetime.now(IST).isoformat(),
+                    "event": "OPEN_POSITIONS_RESTORED",
+                    "count": restored,
+                    "detail": "OPEN PAPER positions restored for quote and exit monitoring only",
+                })
+            return {"restored": restored, "unresolved": len(unresolved)}
+
     def start(self, mode, access_token):
         if not self.config.enabled:
             raise RuntimeError("Opening Breakout is disabled in Strategy Manager.")
