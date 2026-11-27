@@ -25,6 +25,7 @@ class MarketDataEngine:
     def __init__(self):
         self._lock = threading.RLock()
         self._ticker = None
+        self._kite = None
         self._access_token = None
         self._status = "disconnected"
         self._error = None
@@ -60,6 +61,7 @@ class MarketDataEngine:
         try:
             kite = KiteConnect(api_key=api_key)
             kite.set_access_token(access_token)
+            self._kite = kite
             rows = kite.instruments()
             today = date.today()
             equities = [r for r in rows if r.get("exchange") == "NSE" and r.get("segment") == "NSE" and r.get("instrument_type") == "EQ"]
@@ -181,6 +183,7 @@ class MarketDataEngine:
                 return
             ticker, self._ticker = self._ticker, None
             self._access_token = None
+            self._kite = None
             self._ticks.clear()
             self._subscribed.clear()
             self._fno_symbols.clear()
@@ -279,6 +282,36 @@ class MarketDataEngine:
             raise
 
         return True
+
+
+    def historical_minute_candles(self, symbols, start_at, end_at):
+        """Fetch today's real NSE minute candles for the requested underlyings."""
+        from datetime import timedelta
+        with self._lock:
+            kite = self._kite
+            instrument_rows = list(self._instruments.values())
+        if kite is None:
+            raise RuntimeError("Zerodha historical-data client is not ready.")
+        token_by_symbol = {
+            str(row.get("symbol") or "").upper(): int(row["instrument_token"])
+            for row in instrument_rows
+            if row.get("exchange") == "NSE" and row.get("instrument_type") == "EQ"
+        }
+        result = {}
+        for symbol in sorted(set(str(value).upper() for value in symbols)):
+            token = token_by_symbol.get(symbol)
+            if not token:
+                result[symbol] = []
+                continue
+            try:
+                rows = kite.historical_data(token, start_at, end_at, "minute")
+                result[symbol] = rows
+            except Exception:
+                logger.exception("Historical minute candles unavailable for %s", symbol)
+                result[symbol] = []
+            # Zerodha historical endpoint is rate-limited; pace per instrument.
+            clock.sleep(0.35)
+        return result
 
     def universe_symbols(self):
         with self._lock:
