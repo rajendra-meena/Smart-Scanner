@@ -155,6 +155,10 @@ class MarketDataEngine:
                 opening_breakout_service.on_market_tick(changed)
             except Exception:
                 logger.exception("Opening breakout tick processing failed")
+            try:
+                price_action_service.on_market_tick(changed)
+            except Exception:
+                logger.exception("Price Action Intraday tick processing failed")
             self._publish({"type": "ticks", "data": changed, "breadth": breadth,
                            "last_tick_received_at": self._last_tick_received_at})
 
@@ -346,6 +350,8 @@ class MarketDataEngine:
 
 market_data_engine = MarketDataEngine()
 
-# Import after the singleton exists to avoid a circular dependency.
+# Import after the singleton exists to avoid circular dependencies.
 from app.core.opening_breakout.service import OpeningBreakoutService
+from app.core.price_action_service import PriceActionService
 opening_breakout_service = OpeningBreakoutService(market_data_engine)
+price_action_service = PriceActionService(market_data_engine)
