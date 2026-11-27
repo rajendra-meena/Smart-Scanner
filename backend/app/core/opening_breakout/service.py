@@ -44,6 +44,29 @@ class OpeningBreakoutService:
         self._auto_start_attempted_day = None
         self._auto_start_suppressed_day = None
 
+    PLATFORM_DEFAULTS = {
+        "default_mode": "PAPER",
+        "auto_start_new_strategies": False,
+        "default_max_positions": 6,
+        "default_stop_loss_points": 15.0,
+        "default_exit_time": "15:15:00",
+    }
+
+    def platform_defaults(self):
+        saved = self.store.load_settings()
+        return {
+            key: saved.get(f"platform_{key}", value)
+            for key, value in self.PLATFORM_DEFAULTS.items()
+        }
+
+    def save_platform_defaults(self, values):
+        current = self.platform_defaults()
+        current.update(values)
+        self.store.save_settings({
+            f"platform_{key}": value for key, value in current.items()
+        })
+        return self.platform_defaults()
+
     def configure(self, values):
         with self.lock:
             if self.running:
