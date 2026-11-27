@@ -101,7 +101,8 @@ function MarketOverview({snapshot}:{snapshot:MarketSnapshot|null}){
   <div className="indices-section"><div className="indices-heading"><div className="overview-card-label">KEY INDICES</div><span>Live index levels · day change</span></div><div className="indices-grid">{indices.length?indices.map(row=><div className="index-tile" key={row.instrument_token}><div><span>{row.symbol}</span><i className={row.change_percent>=0?"index-up":"index-down"}>{row.change_percent>=0?"▲":"▼"}</i></div><strong>{money(row.last_price)}</strong><small className={row.change_percent>=0?"up":"down"}>{pct(row.change_percent)}</small></div>):<div className="overview-empty">Waiting for key index ticks from Zerodha.</div>}</div></div>
  </section>;
 }
-\nfunction MarketHeatmap({rows}:{rows:MarketRow[]}){
+
+function MarketHeatmap({rows}:{rows:MarketRow[]}){
  const ordered=[...rows].sort((a,b)=>b.change_percent-a.change_percent);
  const maxMove=Math.max(1,...ordered.map(row=>Math.abs(row.change_percent)));
  return <section className="market-heatmap">
