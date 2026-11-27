@@ -16,6 +16,7 @@ class StartRequest(BaseModel):
 
 
 class ConfigRequest(BaseModel):
+    enabled: bool = True
     auto_start: bool = True
     gainers_count: int = Field(default=3, ge=1, le=20)
     losers_count: int = Field(default=3, ge=1, le=20)
