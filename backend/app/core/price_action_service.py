@@ -277,8 +277,7 @@ class PriceActionService:
             if qty <= 0:
                 self.pending.pop(token,None); return
             entry = ask
-            sl = entry-float(self.config["stop_loss_points"])
-            target = entry+float(self.config["stop_loss_points"])*float(self.config["risk_reward"])
+            sl, target = self._premium_levels(entry, float(self.config["stop_loss_percent"]), float(self.config["risk_reward"]))
             pos = {"id":str(uuid4()),"strategy":"PRICE_ACTION_INTRADAY","symbol":item["symbol"],"option_symbol":item["option_symbol"],"direction":item["direction"],"mode":"PAPER","status":"OPEN","token":token,"quantity":qty,"entry_price":entry,"stop_price":sl,"target_price":target,"ltp":float(row.get("last_price") or ask),"bid":bid,"ask":ask,"opened_at":now.isoformat(),"signal_reasons":item["reasons"],"pnl":0.0}
             self.positions[pos["id"]]=pos
             self.pending.pop(token,None)
