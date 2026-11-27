@@ -160,7 +160,9 @@ class PriceActionService:
             # Load multi-day, real Zerodha index history so EMA50/ADX have
             # enough completed candles before any candidate can be approved.
             index_end = now.replace(tzinfo=None, second=0, microsecond=0)
-            index_start = index_end - timedelta(days=7)
+            # Keep at least 20 prior trading sessions plus indicator warm-up.
+            # A 35-calendar-day window covers weekends and exchange holidays.
+            index_start = index_end - timedelta(days=35)
             index_history = {}
             for interval in ("5minute", "15minute"):
                 index_history[interval] = self.market_data.historical_index_candles(
