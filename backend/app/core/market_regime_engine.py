@@ -1,6 +1,6 @@
 """Fail-closed NIFTY/BANKNIFTY market-regime filter for Price Action Intraday."""
 from collections import deque
-from datetime import datetime
+from datetime import datetime, timedelta
 from threading import RLock
 from time import monotonic
 from zoneinfo import ZoneInfo
@@ -49,11 +49,20 @@ class MarketRegimeEngine:
         result.sort(key=lambda item: item["date"])
         return result
 
-    def seed_history(self, symbol, interval, rows):
+    def seed_history(self, symbol, interval, rows, now=None):
         symbol = str(symbol).strip().upper()
         if symbol not in self.candles or interval not in ("5minute", "15minute"):
             return 0
         normalized = self._normalize(rows)
+        if now is not None:
+            current_time = now.astimezone(IST) if now.tzinfo else now.replace(tzinfo=IST)
+            width = 5 if interval == "5minute" else 15
+            # Zerodha may include the currently forming candle; never use it
+            # as a completed bar in EMA/ADX calculations.
+            normalized = [
+                candle for candle in normalized
+                if candle["date"] + timedelta(minutes=width) <= current_time
+            ]
         with self.lock:
             target = self.candles[symbol][interval]
             target.clear()
