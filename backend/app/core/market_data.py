@@ -72,7 +72,7 @@ class MarketDataEngine:
                 if name not in nearest or row["expiry"] < nearest[name]["expiry"]:
                     nearest[name] = row
             indices = [r for r in rows if r.get("exchange") == "NSE" and r.get("segment") == "INDICES" and r.get("tradingsymbol") in self.INDEX_NAMES]
-            selected = (equities + list(nearest.values()) + indices)[:self.MAX_SUBSCRIPTIONS]
+            selected = (indices + equities + list(nearest.values()))[:self.MAX_SUBSCRIPTIONS]
             instrument_map = {int(r["instrument_token"]): {
                 "instrument_token": int(r["instrument_token"]), "symbol": r.get("tradingsymbol"),
                 "name": r.get("name") or r.get("tradingsymbol"), "exchange": r.get("exchange"),
