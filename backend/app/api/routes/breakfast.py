@@ -1,6 +1,7 @@
 from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+from datetime import time
 
 from app.api.dependencies import get_current_session
 from app.core.market_data import breakfast_service
@@ -24,6 +25,14 @@ class BreakfastSettingsRequest(BaseModel):
     psychological_adjustment_amount: float = Field(default=2, ge=0, le=20)
     entry_time: str = "09:21:00"
     exit_time: str = "15:15:00"
+
+    @field_validator("entry_time", "exit_time")
+    @classmethod
+    def valid_time(cls, value):
+        try:
+            return time.fromisoformat(value).isoformat(timespec="seconds")
+        except ValueError as exc:
+            raise ValueError("Time must use HH:MM or HH:MM:SS format.") from exc
 
 
 @router.get("/settings")
