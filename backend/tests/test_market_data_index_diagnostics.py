@@ -134,3 +134,46 @@ def test_price_action_routes_index_ticks_even_when_strategy_disabled():
     service.on_market_tick([index_row])
 
     assert service.market_regime.rows == [index_row]
+
+
+def test_first_fresh_tick_triggers_opening_breakout_recovery_before_tick_dispatch(
+    monkeypatch,
+):
+    engine, token = make_index_engine()
+    calls = []
+
+    class OpeningBreakoutRecorder:
+        def on_feed_connected(self):
+            calls.append("restore")
+
+        def on_market_tick(self, rows):
+            calls.append("ticks")
+
+    class PriceActionRecorder:
+        def on_market_tick(self, rows):
+            return None
+
+    monkeypatch.setattr(
+        market_data_module,
+        "opening_breakout_service",
+        OpeningBreakoutRecorder(),
+    )
+    monkeypatch.setattr(
+        market_data_module,
+        "price_action_service",
+        PriceActionRecorder(),
+    )
+    monkeypatch.setattr(engine, "_publish", lambda message: None)
+
+    engine._on_ticks(None, [{
+        "instrument_token": token,
+        "last_price": 24000,
+        "ohlc": {
+            "close": 23900,
+            "open": 23950,
+            "high": 24010,
+            "low": 23940,
+        },
+    }])
+
+    assert calls == ["restore", "ticks"]
