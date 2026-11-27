@@ -760,6 +760,24 @@ class OpeningBreakoutService:
             ),
         }
 
+    def delete_trade(self, trade_id):
+        """Delete a completed historical trade, never an active position."""
+        with self.lock:
+            if any(
+                position.get("id") == trade_id and position.get("status") == "OPEN"
+                for position in self.positions.values()
+            ):
+                raise RuntimeError("An open position cannot be deleted from trade history.")
+            deleted = self.store.delete_trade(trade_id)
+            if not deleted:
+                raise KeyError("Trade was not found.")
+            self.events.append({
+                "time": datetime.now(IST).isoformat(),
+                "event": "TRADE_HISTORY_DELETED",
+                "trade_id": trade_id,
+            })
+            return {"deleted": True, "id": trade_id}
+
     def trades(self, trade_date=None):
         selected_date = trade_date or datetime.now(IST).date().isoformat()
         return self.store.trades(selected_date)
