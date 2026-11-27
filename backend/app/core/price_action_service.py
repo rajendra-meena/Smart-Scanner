@@ -42,6 +42,7 @@ class PriceActionService:
         self.events = []
         self.started_day = None
         self._squareoff_timer = None
+        self._watchdog_timer = None
         self._attempted_day = None
         self.allowed_symbols = set()
 
@@ -88,6 +89,7 @@ class PriceActionService:
             self._squareoff_timer = Timer(seconds, self.stop)
             self._squareoff_timer.daemon = True
             self._squareoff_timer.start()
+            self._schedule_watchdog()
             return self.snapshot()
 
     def stop(self):
@@ -107,8 +109,45 @@ class PriceActionService:
             if self._squareoff_timer:
                 self._squareoff_timer.cancel()
                 self._squareoff_timer = None
+            if self._watchdog_timer:
+                self._watchdog_timer.cancel()
+                self._watchdog_timer = None
             self.events.append({"time": now.isoformat(), "event": "PAPER_STOPPED"})
             return self.snapshot()
+
+    def _schedule_watchdog(self):
+        if not self.running or self._watchdog_timer is not None:
+            return
+        timer = Timer(1, self._watchdog_tick)
+        timer.daemon = True
+        self._watchdog_timer = timer
+        timer.start()
+
+    def _watchdog_tick(self):
+        with self.lock:
+            if not self.running:
+                self._watchdog_timer = None
+                return
+            now = datetime.now(IST)
+            if not self.market_data.is_feed_fresh(5):
+                self.events.append({"time": now.isoformat(), "event": "FEED_GUARD_STOP", "reason": "Zerodha market feed became stale"})
+                self.stop()
+                return
+            for token, pending in list(self.pending.items()):
+                requested = datetime.fromisoformat(pending["requested_at"])
+                if (now - requested).total_seconds() > 5:
+                    self.pending.pop(token, None)
+                    self.events.append({"time": now.isoformat(), "event": "PENDING_CANCELLED", "symbol": pending["symbol"], "reason": "OPTION_QUOTE_TIMEOUT"})
+            for pos in list(self.positions.values()):
+                if pos["status"] != "OPEN":
+                    continue
+                quote = self.latest_option_quotes.get(pos["token"])
+                if not quote or (now - quote["received_at"]).total_seconds() > 5:
+                    self.events.append({"time": now.isoformat(), "event": "FEED_GUARD_STOP", "reason": "Option quote became stale", "symbol": pos["symbol"]})
+                    self.stop()
+                    return
+            self._watchdog_timer = None
+            self._schedule_watchdog()
 
     def on_market_tick(self, rows):
         now = datetime.now(IST)
