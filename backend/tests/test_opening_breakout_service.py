@@ -1232,3 +1232,46 @@ def test_configured_exit_time_is_used_for_squareoff_timer(service_env, monkeypat
     assert result["running"] is True
     assert service._exit_timer.seconds == 8 * 60
     assert service.events[0]["exit_time"] == "09:28:00"
+
+
+
+def test_square_off_does_not_fallback_to_cached_bid_or_ltp_without_fresh_bid(
+    service_env, monkeypatch
+):
+    service, _, store = service_env
+    position = add_open_position(service, token=909)
+    service._last_option_ticks[909] = {
+        "instrument_token": 909,
+        "instrument_type": "CE",
+        "last_price": 97.0,
+        "depth": {"buy": [], "sell": [{"price": 97.2, "quantity": 10}]},
+    }
+    service._last_option_tick_monotonic[909] = service_module.monotonic()
+
+    service._square_off_paper([], NOW)
+
+    assert position["status"] == "CLOSED_UNPRICED"
+    assert position["exit_price"] is None
+    assert position["pnl"] is None
+    assert len(store.saved_trades) == 1
+
+
+def test_stop_loss_uses_executable_bid_not_ltp_alone(service_env):
+    service, _, _ = service_env
+    position = add_open_position(service, token=910)
+
+    # LTP is below the stop, but the executable bid has not reached it.
+    service._handle_option_tick(
+        option_tick(910, ltp=84.0, bid=86.0, ask=86.2),
+        NOW,
+    )
+    assert position["status"] == "OPEN"
+
+    # Once the bid reaches the stop, exit at that bid.
+    service._handle_option_tick(
+        option_tick(910, ltp=84.0, bid=84.5, ask=84.8),
+        NOW,
+    )
+    assert position["status"] == "CLOSED"
+    assert position["exit_reason"] == "STOP_LOSS"
+    assert position["exit_price"] == 84.5
