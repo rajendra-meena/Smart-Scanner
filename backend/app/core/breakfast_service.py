@@ -172,6 +172,8 @@ class BreakfastService:
     def _equity_levels(self, price, direction, nifty_change):
         target_pct = float(self.config["target_percent"])
         if direction == "LONG":
+            if float(nifty_change or 0) < 0:
+                target_pct = float(self.config["negative_nifty_long_target_percent"])
             target = price * (1 + target_pct / 100)
             stop = price * (1 - float(self.config["stop_loss_percent"]) / 100)
         else:
@@ -197,6 +199,7 @@ class BreakfastService:
                 try:
                     self.start()
                 except RuntimeError as exc:
+                    self.attempted_day = None
                     self._event("AUTO_START_FAILED", reason=str(exc))
             if self.running and self.selection is None and now.time() >= time.fromisoformat(self.config["entry_time"]):
                 result = self._build_selection(now)
@@ -210,7 +213,9 @@ class BreakfastService:
         max_positions = int(self.config["max_positions"])
         max_daily = int(self.config["max_trades_per_day"])
         already = len(self.trades(now.date().isoformat()))
-        for candidate in result["candidates"][:min(max_positions, max_daily - already)]:
+        active = sum(p.get("status") == "OPEN" for p in self.positions.values()) + len(self.pending)
+        capacity = max(0, min(max_positions - active, max_daily - already - len(self.pending)))
+        for candidate in result["candidates"][:capacity]:
             self._queue_option(candidate, now)
 
     def _monitor_equity_positions(self, rows, now):
