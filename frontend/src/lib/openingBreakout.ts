@@ -22,5 +22,6 @@ export const api={
  saveSettings:(config:BreakoutConfig)=>call<BreakoutSettings>("/settings",{method:"PUT",body:JSON.stringify(config)}),
  setMode:(mode:"PAPER"|"LIVE")=>call<BreakoutSettings>("/mode",{method:"PUT",body:JSON.stringify({mode})}),
  start:(mode:"PAPER"|"LIVE")=>call("/start",{method:"POST",body:JSON.stringify({mode,confirm_live:false})}),
+ deleteTrade:(id:string)=>call<{deleted:boolean;id:string}>(`/trades/${encodeURIComponent(id)}`,{method:"DELETE"}),
  stop:()=>call("/stop",{method:"POST"})
 };
