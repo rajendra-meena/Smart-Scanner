@@ -789,6 +789,7 @@ class OpeningBreakoutService:
                 bid=bid,
                 ask=ask,
                 quantity=int(pending["lot_size"]),
+                entry_count=self.engine.stocks[pending["symbol"]].entry_count,
                 opened_at=now.isoformat(),
             )
             self.positions[position_id] = pending
