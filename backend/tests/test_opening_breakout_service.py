@@ -53,7 +53,11 @@ class FakeStore:
         self.saved_settings.update(values)
 
     def save_trade(self, trade):
-        self.saved_trades.append(trade)
+        self.saved_trades = [
+            saved for saved in self.saved_trades
+            if saved.get("id") != trade.get("id")
+        ]
+        self.saved_trades.append(dict(trade))
 
     def trades(self, trade_date=None):
         if trade_date:
@@ -1275,3 +1279,29 @@ def test_stop_loss_uses_executable_bid_not_ltp_alone(service_env):
     assert position["status"] == "CLOSED"
     assert position["exit_reason"] == "STOP_LOSS"
     assert position["exit_price"] == 84.5
+
+
+
+def test_open_position_is_persisted_immediately_and_blocks_restart(
+    service_env, monkeypatch
+):
+    service, market_data, store = service_env
+    pending = add_pending_entry(service, token=911)
+
+    service._handle_option_tick(
+        option_tick(911, ltp=100.0, bid=99.8, ask=100.0),
+        NOW,
+    )
+    persisted = next(
+        trade for trade in store.saved_trades
+        if trade["id"] == pending["id"]
+    )
+    assert persisted["status"] == "OPEN"
+
+    restarted = OpeningBreakoutService(market_data)
+    prepare_start_environment(restarted, market_data, monkeypatch)
+
+    with pytest.raises(RuntimeError, match="unresolved PAPER position"):
+        restarted.start("PAPER", "dummy-token")
+
+    assert restarted.running is False
