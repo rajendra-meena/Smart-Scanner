@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from datetime import date\nfrom fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from pydantic import field_validator
 
@@ -68,8 +68,13 @@ def status(current=Depends(get_current_session)):
 
 
 @router.get("/trades")
-def trades(current=Depends(get_current_session)):
-    return opening_breakout_service.trades()
+def trades(
+    trade_date: date | None = Query(default=None, alias="date"),
+    current=Depends(get_current_session),
+):
+    return opening_breakout_service.trades(
+        trade_date.isoformat() if trade_date else None
+    )
 
 
 @router.put("/config")
