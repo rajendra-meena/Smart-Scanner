@@ -360,7 +360,7 @@ def test_square_off_cancels_pending_and_closes_open_position(service_env):
 
     assert len(store.saved_trades) == 1
     assert service.engine.stocks["ABC"].pending_entry is False
-    assert service.engine.stocks["XYZ"].active_position_id == position["id"]
+    assert service.engine.stocks["XYZ"].active_position_id is None
 
 
 
