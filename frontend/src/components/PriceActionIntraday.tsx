@@ -1,5 +1,5 @@
 import {useEffect,useState} from "react";
-import {Activity,Play,Square,Save,ShieldCheck,TrendingUp,TrendingDown} from "lucide-react";
+import {Play,Square,Save,ShieldCheck} from "lucide-react";
 import {priceActionApi,type PriceActionConfig,type PriceActionState} from "../lib/priceAction";
 
 const initial:PriceActionConfig={enabled:true,auto_start:true,mode:"PAPER",max_positions:3,max_trades_per_day:5,stop_loss_points:15,risk_reward:2,max_spread_percent:1,volume_filter:false,volume_multiplier:1.2,exit_time:"15:15:00",max_daily_loss:1500,gainers_count:20,losers_count:20};
