@@ -7,14 +7,14 @@ from app.core.market_regime_engine import MarketRegimeEngine
 IST = ZoneInfo("Asia/Kolkata")
 
 
-def candles(count=80, trend=1.0, start=None):
+def candles(count=80, trend=1.0, start=None, interval=5):
     start = start or datetime(2026, 11, 24, 9, 15, tzinfo=IST)
     rows = []
     price = 100.0
     for index in range(count):
         next_price = price + trend
         rows.append({
-            "date": start + timedelta(minutes=5 * index),
+            "date": start + timedelta(minutes=interval * index),
             "open": price,
             "high": next_price + 0.15,
             "low": price - 0.1,
@@ -30,7 +30,7 @@ def seed_both(engine, rows_5m=None, rows_15m=None, now=None):
     for symbol in engine.REQUIRED_INDICES:
         engine.seed_history(symbol, "5minute", rows_5m or candles(), now=now)
         # Use a separate timestamp cadence for 15-minute history.
-        source = rows_15m or candles(start=datetime(2026, 11, 24, 9, 15, tzinfo=IST))
+        source = rows_15m or candles(start=datetime(2026, 11, 24, 9, 15, tzinfo=IST), interval=15)
         engine.seed_history(symbol, "15minute", source, now=now)
 
 
@@ -91,7 +91,7 @@ def test_stale_index_feed_fails_closed(monkeypatch):
 def test_seed_history_ignores_incomplete_current_candle():
     engine = MarketRegimeEngine()
     now = datetime(2026, 11, 27, 10, 2, tzinfo=IST)
-    rows = candles(60, start=datetime(2026, 11, 27, 9, 15, tzinfo=IST))
+    rows = candles(9, start=datetime(2026, 11, 27, 9, 15, tzinfo=IST))
     # This candle begins at 10:00 and is still forming at 10:02.
     rows.append({
         "date": datetime(2026, 11, 27, 10, 0, tzinfo=IST),
@@ -99,4 +99,4 @@ def test_seed_history_ignores_incomplete_current_candle():
     })
 
     seeded = engine.seed_history("NIFTY 50", "5minute", rows, now=now)
-    assert seeded == 60
+    assert seeded == 9
