@@ -62,6 +62,7 @@ class OpeningBreakoutService:
                 "live_ready": False,
                 "live_block_reason": "Live broker order placement, protective SL, partial-fill handling and broker reconciliation are not implemented and verified.",
                 "config": {
+                    "enabled": self.config.enabled,
                     "auto_start": self.config.auto_start,
                     "gainers_count": self.config.gainers_count,
                     "losers_count": self.config.losers_count,
@@ -107,6 +108,8 @@ class OpeningBreakoutService:
         self.engine.set_universe(gainers, losers)
 
     def start(self, mode, access_token):
+        if not self.config.enabled:
+            raise RuntimeError("Opening Breakout is disabled in Strategy Manager.")
         if mode != "PAPER":
             raise RuntimeError("Live order routing is not enabled.")
         now = datetime.now(IST)
