@@ -68,6 +68,14 @@ def stop(current=Depends(get_current_session)):
     return price_action_service.stop()
 
 
+
+@router.post("/positions/{position_id}/exit")
+def manual_exit(position_id: str, current=Depends(get_current_session)):
+    try:
+        return price_action_service.manual_exit(position_id)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
 @router.get("/trades")
 def trades(trade_date: date | None = Query(default=None, alias="date"), current=Depends(get_current_session)):
     return price_action_service.trades(trade_date.isoformat() if trade_date else None)
