@@ -112,4 +112,24 @@ class OpeningBreakoutEngine:
             state.active_position_id = None
 
     def snapshot(self):
-        return [{name: getattr(state, name) for name in state.__dataclass_fields__} for state in self.stocks.values()]
+        rows = []
+        for state in self.stocks.values():
+            row = {
+                name: getattr(state, name)
+                for name in state.__dataclass_fields__
+            }
+            if state.signal:
+                stage = f"{state.signal}_SIGNAL"
+            elif state.opening_price is None:
+                stage = "WAITING_FOR_OPEN_TICK"
+            elif state.excursion_up and state.excursion_down:
+                stage = "MOVED_BOTH_SIDES_WAITING_FOR_CROSS"
+            elif state.excursion_up:
+                stage = "MOVED_ABOVE_OPEN_WAITING_FOR_DOWN_CROSS"
+            elif state.excursion_down:
+                stage = "MOVED_BELOW_OPEN_WAITING_FOR_UP_CROSS"
+            else:
+                stage = "WAITING_FOR_FIRST_OPEN_PRICE_MOVE"
+            row["signal_stage"] = stage
+            rows.append(row)
+        return rows
