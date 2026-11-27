@@ -231,3 +231,63 @@ def test_strategy_settings_update_replaces_existing_values(tmp_path):
         "selected_mode": "PAPER",
         "gainers_count": 5,
     }
+
+
+def test_index_instruments_returns_only_loaded_nse_indices():
+    engine = MarketDataEngine()
+    engine._instruments = {
+        101: {"instrument_token": 101, "symbol": "NIFTY 50", "exchange": "NSE", "segment": "INDICES", "instrument_type": "INDEX"},
+        102: {"instrument_token": 102, "symbol": "NIFTY BANK", "exchange": "NSE", "segment": "INDICES", "instrument_type": "INDEX"},
+        103: {"instrument_token": 103, "symbol": "RELIANCE", "exchange": "NSE", "segment": "NSE", "instrument_type": "EQ"},
+        104: {"instrument_token": 104, "symbol": "ABC26NOV100CE", "exchange": "NFO", "segment": "NFO-OPT", "instrument_type": "CE"},
+    }
+
+    assert [row["symbol"] for row in engine.index_instruments()] == ["NIFTY 50", "NIFTY BANK"]
+
+
+def test_historical_index_candles_uses_real_index_tokens_and_interval(monkeypatch):
+    engine = MarketDataEngine()
+
+    class FakeKite:
+        def __init__(self):
+            self.calls = []
+
+        def historical_data(self, token, start_at, end_at, interval):
+            self.calls.append((token, interval))
+            return [{"open": 100, "high": 102, "low": 99, "close": 101, "volume": 0}]
+
+    kite = FakeKite()
+    engine._kite = kite
+    engine._instruments = {
+        101: {"instrument_token": 101, "symbol": "NIFTY 50", "exchange": "NSE", "segment": "INDICES"},
+        102: {"instrument_token": 102, "symbol": "NIFTY BANK", "exchange": "NSE", "segment": "INDICES"},
+        103: {"instrument_token": 103, "symbol": "RELIANCE", "exchange": "NSE", "segment": "NSE"},
+    }
+    monkeypatch.setattr(market_data_module.clock, "sleep", lambda seconds: None)
+
+    result = engine.historical_index_candles(
+        ["NIFTY 50", "NIFTY BANK", "RELIANCE", "UNKNOWN"],
+        datetime(2026, 11, 27, 9, 15),
+        datetime(2026, 11, 27, 10, 0),
+        interval="5minute",
+    )
+
+    assert kite.calls == [(101, "5minute"), (102, "5minute")]
+    assert len(result["NIFTY 50"]) == 1
+    assert len(result["NIFTY BANK"]) == 1
+    assert result["RELIANCE"] == []
+    assert result["UNKNOWN"] == []
+
+
+def test_historical_index_candles_rejects_unsupported_interval():
+    engine = MarketDataEngine()
+
+    try:
+        engine.historical_index_candles(
+            ["NIFTY 50"], datetime(2026, 11, 27, 9, 15),
+            datetime(2026, 11, 27, 10, 0), interval="day",
+        )
+    except ValueError as exc:
+        assert str(exc) == "Unsupported index candle interval."
+    else:
+        raise AssertionError("Unsupported interval must be rejected")
