@@ -823,7 +823,9 @@ def test_service_reentry_after_first_stop_loss(service_env, monkeypatch):
 
     assert service.engine.stocks["ABC"].entry_count == 2
     assert not service.engine.can_enter("ABC")
-    assert len(store.saved_trades) == 1
+    assert len(store.saved_trades) == 2
+    assert sum(trade["status"] == "CLOSED" for trade in store.saved_trades) == 1
+    assert sum(trade["status"] == "OPEN" for trade in store.saved_trades) == 1
 
 
 def test_max_positions_limit_skips_additional_signal(
@@ -925,6 +927,9 @@ def test_timer_callback_cancels_pending_and_closes_open_positions(
 
     add_pending_entry(service, token=101)
     position = add_open_position(service, token=202)
+    service._last_option_ticks[202] = option_tick(
+        202, ltp=96.0, bid=95.5, ask=95.8
+    )
 
     service.running = True
 
