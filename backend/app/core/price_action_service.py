@@ -222,6 +222,23 @@ class PriceActionService:
                             f"ATR baseline sessions={history_state.get('atr_baseline_sessions', 0)}"
                         ),
                     })
+            websocket_diagnostics = self.market_data.index_feed_diagnostics(required_indices)
+            for index_symbol, diagnostic in websocket_diagnostics.items():
+                self.events.append({
+                    "time": now.isoformat(),
+                    "event": "INDEX_WEBSOCKET_DIAGNOSTIC",
+                    "symbol": index_symbol,
+                    "detail": (
+                        f"instrument_found={diagnostic['instrument_found']}; "
+                        f"token={diagnostic['instrument_token']}; "
+                        f"subscribed_locally={diagnostic['subscribed_locally']}; "
+                        f"subscription_requested={diagnostic['subscription_requested']}; "
+                        f"raw_ticks={diagnostic['raw_ticks']}; "
+                        f"valid_ticks={diagnostic['valid_ticks']}; "
+                        f"invalid_ticks={diagnostic['invalid_ticks']}; "
+                        f"subscription_error={diagnostic['subscription_error'] or 'none'}"
+                    ),
+                })
             unmapped = sorted(
                 symbol for symbol in self.allowed_symbols
                 if not self.market_regime.sector_index_for_symbol(symbol)
@@ -537,4 +554,26 @@ class PriceActionService:
         return [json.loads(r[0]) for r in rows]
 
     def snapshot(self):
+        market_regime = self.market_regime.snapshot()
+        websocket_diagnostics = self.market_data.index_feed_diagnostics(
+            market_regime.get("required_indices", [])
+        )
+        for symbol, diagnostic in websocket_diagnostics.items():
+            if symbol in market_regime.get("indices", {}):
+                market_regime["indices"][symbol]["websocket"] = diagnostic
+        return {
+            "running": self.running,
+            "mode": "PAPER",
+            "enabled": self.config["enabled"],
+            "market_data_ready": self.market_data.is_feed_fresh(5),
+            "market_regime": market_regime,
+            "watchlist": self.engine.snapshot(),
+            "positions": list(self.positions.values()),
+            "open_positions": sum(p["status"] == "OPEN" for p in self.positions.values()),
+            "open_pnl": round(sum(float(p.get("pnl") or 0) for p in self.positions.values() if p.get("status") == "OPEN" and p.get("pnl") is not None), 2),
+            "open_capital_used": round(sum(float(p.get("entry_price") or 0) * int(p.get("quantity") or 0) for p in self.positions.values() if p.get("status") == "OPEN"), 2),
+            "trades_count": len(self.trades(datetime.now(IST).date().isoformat())),
+            "trades": self.trades(datetime.now(IST).date().isoformat()),
+            "events": self.events[-100:],
+        }
         return {"running":self.running,"mode":"PAPER","enabled":self.config["enabled"],"market_data_ready":self.market_data.is_feed_fresh(5),"market_regime":self.market_regime.snapshot(),"watchlist":self.engine.snapshot(),"positions":list(self.positions.values()),"open_positions":sum(p["status"]=="OPEN" for p in self.positions.values()),"open_pnl":round(sum(float(p.get("pnl") or 0) for p in self.positions.values() if p.get("status")=="OPEN" and p.get("pnl") is not None),2),"open_capital_used":round(sum(float(p.get("entry_price") or 0)*int(p.get("quantity") or 0) for p in self.positions.values() if p.get("status")=="OPEN"),2),"trades_count":len(self.trades(datetime.now(IST).date().isoformat())),"trades":self.trades(datetime.now(IST).date().isoformat()),"events":self.events[-100:]}
