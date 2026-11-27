@@ -145,6 +145,22 @@ class OpeningBreakoutService:
             if self.running:
                 raise RuntimeError("Opening Breakout is already running.")
 
+            unresolved = [
+                trade for trade in self.store.trades()
+                if trade.get("mode") == "PAPER" and trade.get("status") == "OPEN"
+            ]
+            if unresolved:
+                symbols = ", ".join(sorted({
+                    str(trade.get("symbol") or "UNKNOWN")
+                    for trade in unresolved
+                }))
+                raise RuntimeError(
+                    "Opening Breakout has unresolved PAPER position(s) from a "
+                    f"previous process ({symbols}). Strategy start is blocked "
+                    "until these positions are reconciled; no position will be "
+                    "silently discarded."
+                )
+
             snapshot = self.market_data.snapshot()
             if not self.market_data.is_feed_fresh(5):
                 raise RuntimeError(
@@ -632,6 +648,27 @@ class OpeningBreakoutService:
                 pending["symbol"],
                 position_id,
             )
+            # Persist the OPEN lifecycle immediately so a backend restart
+            # cannot silently erase an active PAPER position.
+            try:
+                self.store.save_trade({
+                    "id": pending["id"],
+                    "trade_date": now.date().isoformat(),
+                    "symbol": pending["symbol"],
+                    **pending,
+                })
+            except Exception as exc:
+                self.events.append({
+                    "time": now.isoformat(),
+                    "event": "PAPER_OPEN_PERSIST_FAILED",
+                    "symbol": pending["symbol"],
+                    "message": str(exc),
+                })
+                self._stop_for_feed_failure(
+                    now,
+                    "Could not persist open PAPER position",
+                )
+                return
             self.events.append({
                 "time": now.isoformat(),
                 "event": "PAPER_ENTRY",
