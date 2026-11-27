@@ -2,7 +2,7 @@ import {useEffect,useRef,useState} from "react";
 import {Play,Square,Save,ShieldCheck} from "lucide-react";
 import {priceActionApi,type PriceActionConfig,type PriceActionState} from "../lib/priceAction";
 
-const initial:PriceActionConfig={enabled:true,auto_start:true,mode:"PAPER",max_positions:3,max_trades_per_day:5,stop_loss_points:15,risk_reward:2,max_spread_percent:1,volume_filter:false,volume_multiplier:1.2,exit_time:"15:15:00",max_daily_loss:1500,gainers_count:20,losers_count:20};
+const initial:PriceActionConfig={enabled:true,auto_start:true,mode:"PAPER",max_positions:3,max_trades_per_day:5,stop_loss_percent:15,risk_reward:2,max_spread_percent:1,volume_filter:false,volume_multiplier:1.2,exit_time:"15:15:00",max_daily_loss:1500,gainers_count:20,losers_count:20};
 const fmt=(v:any)=>typeof v==="number"?v.toLocaleString("en-IN",{maximumFractionDigits:2}):"—";
 const clock=(v:any)=>v?new Date(v).toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit",second:"2-digit"}):"—";
 
@@ -40,7 +40,7 @@ export default function PriceActionIntraday(){
     <label className="pa-toggle">Automatic start<select value={String(config.auto_start)} onChange={e=>setConfig({...config,auto_start:e.target.value==="true"})}><option value="true">ON — after 09:20 IST</option><option value="false">OFF — manual start</option></select></label>
     {field("F&O top gainers","gainers_count","1","1")}\n    {field("F&O top losers","losers_count","1","1")}\n    {field("Maximum open positions","max_positions","1","1")}
     {field("Maximum trades per day","max_trades_per_day","1","1")}
-    {field("Stop loss (option premium points)","stop_loss_points","0.05","0.05")}
+    {field("Stop loss (% of option premium)","stop_loss_percent","0.5","1")}
     {field("Risk : Reward (e.g. 2 = 1:2)","risk_reward","0.1","1")}
     {field("Maximum bid/ask spread (%)","max_spread_percent","0.05","0.05")}
     {field("Maximum daily loss (₹)","max_daily_loss","100","1")}
@@ -48,7 +48,7 @@ export default function PriceActionIntraday(){
     <label className="pa-toggle">Volume confirmation<select value={String(config.volume_filter)} onChange={e=>setConfig({...config,volume_filter:e.target.value==="true"})}><option value="false">OFF — optional filter</option><option value="true">ON — require volume expansion</option></select></label>
     <label className="pa-toggle">Square-off time (IST)<input type="time" step="1" value={config.exit_time} onChange={e=>setConfig({...config,exit_time:e.target.value})}/></label>
    </div>
-   <p className="pa-settings-footnote">Signal universe uses F&amp;O stocks from Zerodha's instrument master. Structure is built from one-minute underlying equity ticks. Option contract selection uses the nearest available expiry and ATM strike.</p>
+   <p className="pa-settings-footnote">Stop loss is calculated as a percentage of the option entry premium (default 15%); target is based on the configured risk:reward ratio. Both levels are aligned to the ₹0.05 option tick size and stop loss will never be negative. Signal universe uses F&amp;O stocks from Zerodha's instrument master. Structure is built from one-minute underlying equity ticks. Option contract selection uses the nearest available expiry and ATM strike.</p>
    <button className="primary" disabled={busy||!!state?.running} onClick={()=>void save()}><Save size={14}/> Save strategy settings</button>
   </>}
  </section>;
