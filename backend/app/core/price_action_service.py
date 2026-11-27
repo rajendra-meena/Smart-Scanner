@@ -342,7 +342,12 @@ class PriceActionService:
                 "symbol": signal.get("symbol"),
                 "direction": signal.get("direction"),
                 "market_regime": regime.get("regime"),
-                "reason": regime.get("reason"),
+                "market_volatility": regime.get("volatility", "UNKNOWN"),
+                "reason": (
+                    regime.get("volatility_reason")
+                    if regime.get("volatility") != "NORMAL"
+                    else regime.get("reason")
+                ),
             })
             return
         # One active trade lifecycle per underlying symbol. A new candle signal
