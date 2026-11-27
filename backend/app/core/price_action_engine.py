@@ -13,12 +13,14 @@ class PriceActionEngine:
         self.current = {}
         self.last_signal_candle = {}
         self.state = {}
+        self.last_cumulative_volume = {}
 
     def reset(self):
         self.candles.clear()
         self.current.clear()
         self.last_signal_candle.clear()
         self.state.clear()
+        self.last_cumulative_volume.clear()
 
     def _close_minute(self, symbol, candle):
         history = self.candles.setdefault(symbol, deque(maxlen=120))
@@ -36,16 +38,22 @@ class PriceActionEngine:
         volume = int(row.get("volume") or 0)
         current = self.current.get(symbol)
         if current is None:
-            self.current[symbol] = {"minute": minute, "open": price, "high": price, "low": price, "close": price, "volume": volume}
+            baseline = self.last_cumulative_volume.get(symbol, volume)
+            self.current[symbol] = {"minute": minute, "open": price, "high": price, "low": price, "close": price, "volume": max(0, volume - baseline)}
+            self.last_cumulative_volume[symbol] = volume
             return None
         if current["minute"] != minute:
             signal = self._close_minute(symbol, current)
-            self.current[symbol] = {"minute": minute, "open": price, "high": price, "low": price, "close": price, "volume": volume}
+            baseline = self.last_cumulative_volume.get(symbol, volume)
+            self.current[symbol] = {"minute": minute, "open": price, "high": price, "low": price, "close": price, "volume": max(0, volume - baseline)}
+            self.last_cumulative_volume[symbol] = volume
             return signal
         current["high"] = max(current["high"], price)
         current["low"] = min(current["low"], price)
         current["close"] = price
-        current["volume"] = max(current["volume"], volume)
+        baseline = self.last_cumulative_volume.get(symbol, volume)
+        current["volume"] = max(current["volume"], max(0, volume - baseline))
+        self.last_cumulative_volume[symbol] = max(baseline, volume)
         return None
 
     def _analyze(self, symbol, candles):
