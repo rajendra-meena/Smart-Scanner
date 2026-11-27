@@ -1313,3 +1313,29 @@ def test_open_position_is_persisted_immediately_and_blocks_restart(
         restarted.start("PAPER", "dummy-token")
 
     assert restarted.running is False
+
+
+def test_manual_stop_keeps_position_open_until_fresh_bid_then_closes(
+    service_env,
+):
+    service, _, store = service_env
+    position = add_open_position(service, token=912)
+    service.running = True
+
+    service.stop()
+
+    assert service.running is False
+    assert position["status"] == "OPEN"
+    assert position["exit_requested"] is True
+    assert position["exit_price"] is None
+    assert service.engine.stocks["XYZ"].active_position_id == position["id"]
+
+    service.on_market_tick([
+        option_tick(912, ltp=96.0, bid=95.5, ask=95.8)
+    ])
+
+    assert position["status"] == "CLOSED"
+    assert position["exit_reason"] == "MANUAL_STOP"
+    assert position["exit_price"] == 95.5
+    assert service.engine.stocks["XYZ"].active_position_id is None
+    assert store.saved_trades[-1]["status"] == "CLOSED"
