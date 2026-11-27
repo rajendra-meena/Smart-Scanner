@@ -28,6 +28,44 @@ class PriceActionEngine:
         self.current.pop(symbol, None)
         return self._analyze(symbol, list(history))
 
+
+    def seed_history(self, symbol, candles):
+        """Seed completed Zerodha candles without generating a retroactive entry."""
+        normalized = []
+        for row in candles:
+            stamp = row.get("date") or row.get("minute")
+            if stamp is None:
+                continue
+            if stamp.tzinfo is None:
+                stamp = stamp.replace(tzinfo=IST)
+            else:
+                stamp = stamp.astimezone(IST)
+            normalized.append({
+                "minute": stamp.replace(second=0, microsecond=0),
+                "open": float(row.get("open") or 0),
+                "high": float(row.get("high") or 0),
+                "low": float(row.get("low") or 0),
+                "close": float(row.get("close") or 0),
+                "volume": int(row.get("volume") or 0),
+            })
+        normalized = [c for c in normalized if c["close"] > 0 and c["high"] > 0 and c["low"] > 0]
+        normalized.sort(key=lambda c: c["minute"])
+        history = self.candles.setdefault(str(symbol).upper(), deque(maxlen=120))
+        history.clear()
+        history.extend(normalized[-120:])
+        if len(history) >= 8:
+            # Calculate the current market structure, but never execute an old signal.
+            self._analyze(str(symbol).upper(), list(history))
+            state = self.state[str(symbol).upper()]
+            state["signal"] = None
+            state["reason"] = "Historical baseline loaded; waiting for next completed candle"
+        else:
+            self.state[str(symbol).upper()] = {
+                "structure": "BUILDING", "zone": None, "signal": None,
+                "reason": f"Historical data returned {len(history)} completed candles; 8 required",
+            }
+        return len(history)
+
     def on_tick(self, row, now):
         symbol = str(row.get("symbol") or "").upper()
         price = float(row.get("last_price") or 0)
