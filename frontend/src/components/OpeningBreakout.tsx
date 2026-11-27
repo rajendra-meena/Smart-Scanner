@@ -12,7 +12,17 @@ export default function OpeningBreakout(){
  const refresh=async()=>{try{const [s,t,c]=await Promise.all([api.status(),api.trades(),api.settings()]);setStatus(s);setTrades(t);setSettings(c);setDraft(prev=>prev??c.config)}catch(e){setError(e instanceof Error?e.message:"Unable to load strategy data")}};
  useEffect(()=>{void refresh();const id=window.setInterval(()=>void refresh(),2000);return()=>window.clearInterval(id)},[]);
  const updateMode=async(mode:"PAPER"|"LIVE")=>{setBusy(true);setError("");setNotice("");try{const result=await api.setMode(mode);setSettings(result);setNotice(mode==="PAPER"?"Paper mode selected and saved.":"Live mode preference saved. Live order execution is not available until broker execution safeguards are implemented.");}catch(e){setError(e instanceof Error?e.message:"Unable to update mode")}finally{setBusy(false)}};
- const save=async()=>{if(!draft)return;setBusy(true);setError("");setNotice("");try{const result=await api.saveSettings(draft);setSettings(result);setDraft(result.config);setNotice("Settings saved successfully.");await refresh()}catch(e){setError(e instanceof Error?e.message:"Unable to save settings")}finally{setBusy(false)}};
+ const save=async()=>{
+  if(!draft)return;
+  const validation:string[]=[];
+  if(!Number.isInteger(draft.gainers_count)||draft.gainers_count<1||draft.gainers_count>20)validation.push("Top gainers count must be between 1 and 20.");
+  if(!Number.isInteger(draft.losers_count)||draft.losers_count<1||draft.losers_count>20)validation.push("Top losers count must be between 1 and 20.");
+  if(!Number.isFinite(draft.stop_loss_points)||draft.stop_loss_points<=0||draft.stop_loss_points>100)validation.push("Stop loss must be greater than 0 and at most 100 points.");
+  if(!Number.isInteger(draft.max_positions)||draft.max_positions<1||draft.max_positions>6)validation.push("Maximum open positions must be between 1 and 6.");
+  if(!Number.isFinite(draft.max_spread_percent)||draft.max_spread_percent<=0||draft.max_spread_percent>10)validation.push("Maximum bid/ask spread must be greater than 0 and at most 10%.");
+  if(!/^([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d$/.test(draft.exit_time)||draft.exit_time<="09:15:30")validation.push("Exit time must be later than 09:15:30 IST and use HH:MM:SS.");
+  if(validation.length){setError(validation.join(" "));setNotice("");return;}
+  setBusy(true);setError("");setNotice("");try{const result=await api.saveSettings(draft);setSettings(result);setDraft(result.config);setNotice("Settings saved successfully.");await refresh()}catch(e){setError(e instanceof Error?e.message:"Unable to save settings")}finally{setBusy(false)}};
  const start=async()=>{setBusy(true);setError("");try{await api.start(settings?.mode||"PAPER");await refresh()}catch(e){setError(e instanceof Error?e.message:"Start failed")}finally{setBusy(false)}};
  const stop=async()=>{setBusy(true);setError("");try{await api.stop();await refresh()}catch(e){setError(e instanceof Error?e.message:"Stop failed")}finally{setBusy(false)}};
  const positions=status?.positions||[],events=status?.events||[];
