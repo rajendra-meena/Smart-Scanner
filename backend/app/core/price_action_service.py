@@ -3,7 +3,7 @@ import json
 import sqlite3
 from datetime import datetime, time
 from pathlib import Path
-from threading import RLock, Timer
+from threading import RLock, Timer, Thread
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
@@ -45,6 +45,8 @@ class PriceActionService:
         self._watchdog_timer = None
         self._attempted_day = None
         self.allowed_symbols = set()
+        self._feed_stale_notified = False
+        self._stale_option_notified = set()
 
     def save_settings(self, values):
         with self.lock:
@@ -80,11 +82,23 @@ class PriceActionService:
             gainers = sorted([row for row in eligible if float(row.get("change_percent") or 0) > 0], key=lambda row: float(row.get("change_percent") or 0), reverse=True)[:int(self.config["gainers_count"])]
             losers = sorted([row for row in eligible if float(row.get("change_percent") or 0) < 0], key=lambda row: float(row.get("change_percent") or 0))[:int(self.config["losers_count"])]
             self.allowed_symbols = {str(row["symbol"]).upper() for row in gainers + losers}
+            history_start = datetime.combine(now.date(), time(9, 15))
+            history_end = now.replace(tzinfo=None, second=0, microsecond=0)
+            historical = self.market_data.historical_minute_candles(
+                self.allowed_symbols, history_start, history_end
+            )
+            seeded = 0
+            for symbol in self.allowed_symbols:
+                seeded += self.engine.seed_history(symbol, historical.get(symbol, []))
+            self.events = [{
+                "time": now.isoformat(), "event": "HISTORICAL_BASELINE_LOADED",
+                "detail": f"{seeded} completed Zerodha one-minute candles loaded across {len(self.allowed_symbols)} stocks"
+            }]
             self.positions.clear()
             self.pending.clear()
             self.option_meta.clear()
             self.latest_option_quotes.clear()
-            self.events = [{"time": now.isoformat(), "event": "PAPER_STARTED", "detail": "Price Action Intraday started from live Zerodha ticks"}]
+            self.events.append({"time": now.isoformat(), "event": "PAPER_STARTED", "detail": "Price Action Intraday started using historical baseline and live Zerodha ticks"})
             seconds = max(0, (datetime.combine(now.date(), exit_time, tzinfo=IST)-now).total_seconds())
             self._squareoff_timer = Timer(seconds, self.stop)
             self._squareoff_timer.daemon = True
@@ -130,9 +144,13 @@ class PriceActionService:
                 return
             now = datetime.now(IST)
             if not self.market_data.is_feed_fresh(5):
-                self.events.append({"time": now.isoformat(), "event": "FEED_GUARD_STOP", "reason": "Zerodha market feed became stale"})
-                self.stop()
+                if not self._feed_stale_notified:
+                    self.events.append({"time": now.isoformat(), "event": "FEED_STALE_PAUSED", "reason": "Waiting for fresh Zerodha ticks; open PAPER positions are retained"})
+                    self._feed_stale_notified = True
+                self._watchdog_timer = None
+                self._schedule_watchdog()
                 return
+            self._feed_stale_notified = False
             for token, pending in list(self.pending.items()):
                 requested = datetime.fromisoformat(pending["requested_at"])
                 if (now - requested).total_seconds() > 5:
@@ -143,9 +161,12 @@ class PriceActionService:
                     continue
                 quote = self.latest_option_quotes.get(pos["token"])
                 if not quote or (now - quote["received_at"]).total_seconds() > 5:
-                    self.events.append({"time": now.isoformat(), "event": "FEED_GUARD_STOP", "reason": "Option quote became stale", "symbol": pos["symbol"]})
-                    self.stop()
-                    return
+                    pos["quote_stale"] = True
+                    if token not in self._stale_option_notified:
+                        self.events.append({"time": now.isoformat(), "event": "OPTION_QUOTE_STALE", "reason": "Waiting for next valid option quote; strategy remains active", "symbol": pos["symbol"]})
+                        self._stale_option_notified.add(token)
+                else:
+                    pos["quote_stale"] = False
             self._watchdog_timer = None
             self._schedule_watchdog()
 
@@ -156,14 +177,10 @@ class PriceActionService:
                 return
             if not self.running and self.config["auto_start"] and self.config["mode"] == "PAPER" and time(9,20) <= now.time() < time.fromisoformat(self.config["exit_time"]) and self._attempted_day != now.date().isoformat():
                 self._attempted_day = now.date().isoformat()
-                try:
-                    self.start()
-                except RuntimeError as exc:
-                    self.events.append({"time":now.isoformat(),"event":"AUTO_START_FAILED","reason":str(exc)})
+                Thread(target=self._auto_start_worker, daemon=True, name="price-action-auto-start").start()
             if not self.running:
                 return
             if not self.market_data.is_feed_fresh(5) or now.date().isoformat() != self.started_day:
-                self.stop()
                 return
             for row in rows:
                 kind = row.get("instrument_type")
@@ -173,6 +190,14 @@ class PriceActionService:
                     signal = self.engine.on_tick(row, now)
                     if signal:
                         self._queue_option(signal, now)
+
+    def _auto_start_worker(self):
+        try:
+            self.start()
+        except RuntimeError as exc:
+            with self.lock:
+                self.events.append({"time": datetime.now(IST).isoformat(), "event": "AUTO_START_FAILED", "reason": str(exc)})
+                self._attempted_day = None
 
     def _queue_option(self, signal, now):
         open_count = sum(p["status"]=="OPEN" for p in self.positions.values()) + len(self.pending)
@@ -226,7 +251,8 @@ class PriceActionService:
             return
         pos = next((p for p in self.positions.values() if p["token"]==token and p["status"]=="OPEN"),None)
         if not pos:return
-        pos.update(ltp=float(row.get("last_price") or 0),bid=bid,ask=ask,pnl=round((bid-pos["entry_price"])*pos["quantity"],2))
+        pos.update(ltp=float(row.get("last_price") or 0),bid=bid,ask=ask,pnl=round((bid-pos["entry_price"])*pos["quantity"],2),quote_stale=False)
+        self._stale_option_notified.discard(token)
         if bid <= pos["stop_price"]: self._close(pos,bid,"STOP_LOSS",now)
         elif bid >= pos["target_price"]: self._close(pos,bid,"TARGET",now)
 
