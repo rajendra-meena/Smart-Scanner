@@ -129,6 +129,27 @@ class PriceActionService:
             self.events.append({"time": now.isoformat(), "event": "PAPER_STOPPED"})
             return self.snapshot()
 
+    def manual_exit(self, position_id):
+        """Close one open PAPER position at its latest fresh bid quote."""
+        with self.lock:
+            now = datetime.now(IST)
+            pos = self.positions.get(position_id)
+            if not pos or pos.get("status") != "OPEN":
+                raise RuntimeError("This position is no longer open.")
+            quote = self.latest_option_quotes.get(pos["token"])
+            if not quote or (now - quote["received_at"]).total_seconds() > 5:
+                raise RuntimeError("Fresh Zerodha option quote is unavailable. Position remains open; try again when quote is live.")
+            bid = float(quote.get("bid") or 0)
+            if bid <= 0:
+                raise RuntimeError("Valid bid price is unavailable. Position remains open.")
+            self._close(pos, bid, "MANUAL_EXIT", now)
+            self.events.append({
+                "time": now.isoformat(), "event": "PAPER_MANUAL_EXIT",
+                "symbol": pos["symbol"], "option": pos["option_symbol"],
+                "exit_price": bid, "pnl": pos["pnl"],
+            })
+            return self.snapshot()
+
     def _schedule_watchdog(self):
         if not self.running or self._watchdog_timer is not None:
             return
