@@ -535,3 +535,22 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid 
 .strategy-center .section-head p{color:var(--ss-muted)}
 @media(max-width:760px){.strategy-registry-card{grid-template-columns:42px minmax(0,1fr)}.strategy-registry-actions{grid-column:1/-1;flex-direction:row;min-width:0}.strategy-registry-actions button{flex:1}.orders-overview-stats{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:540px){.strategy-center-intro{flex-direction:column}.global-defaults-grid{grid-template-columns:1fr}.future-strategy-panel{align-items:flex-start;flex-direction:column}.strategy-registry-card{padding:13px;gap:11px}}
+
+/* Price Action Intraday workspace */
+.pa-workspace{color:var(--ss-ink)}
+.pa-statusline{display:flex;align-items:center;gap:8px;padding:10px 12px;margin:14px 0;border:1px solid var(--ss-line);border-radius:9px;background:#fff;color:var(--ss-muted);font-size:10px}
+.pa-dot{width:7px;height:7px;border-radius:50%;background:#a4a69b}.pa-dot.active{background:#6c9a3d;box-shadow:0 0 0 4px #d9f36a55}
+.pa-controls{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin:16px 0}
+.pa-controls>span{margin-left:auto;font-size:10px;color:var(--ss-muted)}
+.pa-section-head{display:flex;align-items:center;justify-content:space-between;margin:22px 0 10px}
+.pa-section-head h3{font:800 14px Manrope;color:var(--ss-ink);margin:0 0 4px}
+.pa-section-head p{font-size:10px;color:var(--ss-muted);margin:0}
+.pa-field{display:flex;flex-direction:column;gap:7px;padding:12px;border:1px solid var(--ss-line);border-radius:10px;background:#fff;color:var(--ss-ink);font-size:10px;font-weight:800}
+.pa-field input,.pa-toggle select,.pa-toggle input{width:100%;padding:10px;border:1px solid var(--ss-line);border-radius:8px;background:#fff;color:var(--ss-ink)}
+.pa-toggle{display:flex;flex-direction:column;gap:7px;padding:12px;border:1px solid var(--ss-line);border-radius:10px;background:#fff;color:var(--ss-ink);font-size:10px;font-weight:800}
+.pa-settings-footnote{font-size:10px;color:var(--ss-muted);line-height:1.6;margin:12px 0 18px}
+.pa-events{display:flex;flex-direction:column;gap:6px}
+.pa-events>div{display:grid;grid-template-columns:85px 190px minmax(0,1fr);gap:10px;align-items:center;padding:9px 11px;border:1px solid var(--ss-line);border-radius:8px;background:#fff;font-size:9px}
+.pa-events span,.pa-events small{color:var(--ss-muted)}.pa-events b{color:var(--ss-olive)}
+.price-action-registry-card{margin-top:12px}
+@media(max-width:650px){.pa-events>div{grid-template-columns:1fr;gap:4px}.pa-controls>span{width:100%;margin-left:0}.pa-section-head{align-items:flex-start}}
