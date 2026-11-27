@@ -267,13 +267,22 @@ class OpeningBreakoutService:
 
             tick = self._last_option_ticks.get(token, {})
             bids = (tick.get("depth") or {}).get("buy") or []
-            price = float(
-                (bids[0].get("price") if bids else 0)
-                or position.get("bid")
-                or tick.get("last_price")
-                or position["entry_price"]
+            bid = next(
+                (
+                    float(level.get("price") or 0)
+                    for level in bids
+                    if float(level.get("price") or 0) > 0
+                ),
+                0,
             )
-            self._close_paper(position, price, reason, now)
+            if bid <= 0:
+                self._record_unpriced_feed_exit(
+                    position,
+                    now,
+                    exit_reason=f"{reason}_UNPRICED",
+                )
+                continue
+            self._close_paper(position, bid, reason, now)
 
     def _record_unpriced_feed_exit(
         self, position, now, exit_reason="FEED_GUARD_EXIT"
@@ -650,10 +659,13 @@ class OpeningBreakoutService:
                         (prices[0] - position["entry_price"]) * position["quantity"],
                         2,
                     )
-                if ltp <= position["stop_price"]:
+                # Stop-loss decisions and simulated exits use the same
+                # executable bid-side price; LTP alone is not an exit quote.
+                executable_bid = prices[0] if prices else 0
+                if executable_bid > 0 and executable_bid <= position["stop_price"]:
                     self._close_paper(
                         position,
-                        prices[0] if prices else ltp,
+                        executable_bid,
                         "STOP_LOSS",
                         now,
                     )
