@@ -9,6 +9,7 @@ Mode = Literal["PAPER", "LIVE"]
 @dataclass(slots=True)
 class BreakoutConfig:
     enabled: bool = False
+    auto_start: bool = True
     start_time: str = "09:15:00"
     end_time: str = "09:30:00"
     exit_time: str = "09:30:00"
