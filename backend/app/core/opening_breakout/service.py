@@ -323,7 +323,7 @@ class OpeningBreakoutService:
         position.update(
             status="OPEN",
             exit_price=None,
-            exit_reason=exit_reason,
+            exit_reason=position.get("exit_reason") or exit_reason,
             closed_at=None,
             pnl=None,
             quote_stale=True,
