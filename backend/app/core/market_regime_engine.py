@@ -452,18 +452,33 @@ class MarketRegimeEngine:
     def allows(self, direction, underlying_symbol=None):
         if not underlying_symbol:
             snapshot = self.snapshot()
-            required = "BULLISH" if str(direction).upper() == "CE" else "BEARISH"
-            allowed = snapshot["regime"] == required and snapshot.get("volatility") == "NORMAL"
-            return allowed, snapshot
-        sector = self.sector_index_for_symbol(underlying_symbol)
-        if not sector:
-            return False, {
-                "regime": "UNKNOWN",
-                "reason": f"No approved sector-index mapping for {underlying_symbol}; entry blocked",
-                "indices": {},
-                "required_indices": list(self.REQUIRED_INDICES),
-            }
-        snapshot = self.snapshot(underlying_symbol)
+        else:
+            sector = self.sector_index_for_symbol(underlying_symbol)
+            if not sector:
+                return False, {
+                    "regime": "UNKNOWN",
+                    "reason": f"No approved sector-index mapping for {underlying_symbol}; entry blocked",
+                    "entry_block_reason": f"No approved sector-index mapping for {underlying_symbol}; entry blocked",
+                    "volatility": "UNKNOWN",
+                    "indices": {},
+                    "required_indices": list(self.REQUIRED_INDICES),
+                }
+            snapshot = self.snapshot(underlying_symbol)
+
         required = "BULLISH" if str(direction).upper() == "CE" else "BEARISH"
-        allowed = snapshot["regime"] == required and snapshot.get("volatility") == "NORMAL"
+        if snapshot["regime"] != required:
+            allowed = False
+            block_reason = snapshot.get("reason", "Required market direction is not aligned")
+        elif snapshot.get("volatility") != "NORMAL":
+            allowed = False
+            block_reason = snapshot.get(
+                "volatility_reason",
+                "Relative ATR volatility filter is not ready",
+            )
+        else:
+            allowed = True
+            block_reason = "Market direction and volatility filters passed"
+
+        snapshot["entry_allowed"] = allowed
+        snapshot["entry_block_reason"] = block_reason
         return allowed, snapshot
