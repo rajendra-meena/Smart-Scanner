@@ -34,6 +34,17 @@ def seed_both(engine, rows_5m=None, rows_15m=None, now=None):
         engine.seed_history(symbol, "15minute", source, now=now)
 
 
+def use_normal_volatility_for_direction_tests(engine, monkeypatch):
+    monkeypatch.setattr(
+        engine,
+        "_volatility_state",
+        lambda candles, current_candle=None: {
+            "status": "NORMAL",
+            "reason": "Direction-only test fixture",
+        },
+    )
+
+
 def test_market_regime_is_unknown_until_sufficient_history_and_fresh_ticks():
     engine = MarketRegimeEngine()
     seed_both(engine, rows_5m=candles(20), rows_15m=candles(20))
@@ -44,6 +55,7 @@ def test_market_regime_is_unknown_until_sufficient_history_and_fresh_ticks():
 
 def test_aligned_bullish_indices_allow_only_ce_after_fresh_ticks(monkeypatch):
     engine = MarketRegimeEngine()
+    use_normal_volatility_for_direction_tests(engine, monkeypatch)
     seed_both(engine)
     monkeypatch.setattr(regime_module, "monotonic", lambda: 100.0)
     now = datetime(2026, 11, 27, 10, 0, tzinfo=IST)
@@ -59,6 +71,7 @@ def test_aligned_bullish_indices_allow_only_ce_after_fresh_ticks(monkeypatch):
 
 def test_mixed_major_index_directions_block_all_entries(monkeypatch):
     engine = MarketRegimeEngine()
+    use_normal_volatility_for_direction_tests(engine, monkeypatch)
     bullish = candles()
     bearish = candles(trend=-1.0)
     now = datetime(2026, 11, 27, 15, 30, tzinfo=IST)
@@ -105,6 +118,7 @@ def test_seed_history_ignores_incomplete_current_candle():
 
 def test_sector_index_is_required_for_a_stock_entry(monkeypatch):
     engine = MarketRegimeEngine()
+    use_normal_volatility_for_direction_tests(engine, monkeypatch)
     required = engine.indices_for_symbols(["INFY"])
     assert required == ["NIFTY 50", "NIFTY BANK", "NIFTY IT"]
     engine.register_indices(required)
@@ -203,3 +217,55 @@ def test_sideways_required_sector_index_blocks_entry(monkeypatch):
     allowed, snapshot = engine.allows("CE", "INFY")
     assert snapshot["regime"] == "SIDEWAYS"
     assert allowed is False
+
+
+def volatility_history(current_spike=False):
+    rows = []
+    start = datetime(2026, 10, 1, 9, 15, tzinfo=IST)
+    price = 100.0
+    for day_index in range(22):
+        day = start.date() + timedelta(days=day_index)
+        # Skip weekends to model NSE trading sessions.
+        while (start.replace(year=day.year, month=day.month, day=day.day).weekday() >= 5):
+            day += timedelta(days=1)
+        for slot in range(15):
+            stamp = datetime.combine(day, datetime.min.time(), tzinfo=IST).replace(hour=9, minute=15) + timedelta(minutes=5 * slot)
+            spike = current_spike and day_index == 21 and slot in (12, 13)
+            width = 15.0 if spike else 0.5
+            close = price + 0.1
+            rows.append({
+                "date": stamp, "open": price, "high": max(price, close) + width,
+                "low": min(price, close) - width, "close": close, "volume": 0,
+            })
+            price = close
+    current_stamp = rows[-1]["date"] + timedelta(minutes=5)
+    current_candle = {
+        "date": current_stamp, "open": price, "high": price + 0.1,
+        "low": price - 0.1, "close": price, "volume": 0,
+    }
+    return rows, current_candle
+
+
+def test_relative_atr_filter_blocks_after_two_high_volatility_candles():
+    engine = MarketRegimeEngine()
+    rows, current = volatility_history(current_spike=True)
+    state = engine._volatility_state(rows, current)
+    assert state["status"] == "HIGH"
+    assert state["ratio"] > 1.5
+    assert state["baseline_sessions"] == 20
+
+
+def test_relative_atr_filter_allows_normal_volatility():
+    engine = MarketRegimeEngine()
+    rows, current = volatility_history(current_spike=False)
+    state = engine._volatility_state(rows, current)
+    assert state["status"] == "NORMAL"
+    assert state["ratio"] <= 1.5
+
+
+def test_relative_atr_filter_fails_closed_without_twenty_session_baseline():
+    engine = MarketRegimeEngine()
+    rows, current = volatility_history(current_spike=False)
+    state = engine._volatility_state(rows[-100:], current)
+    assert state["status"] == "UNKNOWN"
+    assert "prior sessions" in state["reason"]
