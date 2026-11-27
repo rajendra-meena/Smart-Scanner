@@ -65,3 +65,21 @@ def test_tick_builder_only_analyzes_after_minute_closes():
     assert engine.on_tick({"symbol": "ABC", "last_price": 102, "volume": 15}, now + timedelta(minutes=1)) is None
     assert engine.current["ABC"]["volume_start"] == 12
     assert engine.current["ABC"]["volume"] == 3
+
+
+def test_seed_history_populates_structure_without_retroactive_entry():
+    engine = PriceActionEngine({"volume_filter": False})
+    candles = bullish_sweep_candles()
+    seeded = engine.seed_history("ABC", [{"date": row["minute"], **row} for row in candles])
+    assert seeded == 8
+    state = engine.snapshot()[0]
+    assert state["structure"] in {"BULLISH_HH_HL", "BEARISH_LH_LL", "RANGE"}
+    assert state["signal"] is None
+    assert state["reason"] == "Historical baseline loaded; waiting for next completed candle"
+
+
+def test_seed_history_reports_insufficient_historical_candles():
+    engine = PriceActionEngine()
+    seeded = engine.seed_history("ABC", [{"date": datetime(2026, 11, 27, 9, 15, tzinfo=IST), "open": 10, "high": 11, "low": 9, "close": 10, "volume": 100}])
+    assert seeded == 1
+    assert engine.snapshot()[0]["reason"].startswith("Historical data returned 1 completed")
