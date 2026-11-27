@@ -236,6 +236,27 @@ class PriceActionService:
                 self._attempted_day = None
 
     def _queue_option(self, signal, now):
+        # One active trade lifecycle per underlying symbol. A new candle signal
+        # must not open another option position while this symbol is open/pending.
+        symbol = str(signal.get("symbol") or "").upper()
+        active_position = next(
+            (p for p in self.positions.values()
+             if p.get("status") == "OPEN" and str(p.get("symbol") or "").upper() == symbol),
+            None,
+        )
+        active_pending = next(
+            (p for p in self.pending.values()
+             if str(p.get("symbol") or "").upper() == symbol),
+            None,
+        )
+        if active_position or active_pending:
+            self.events.append({
+                "time": now.isoformat(),
+                "event": "SIGNAL_SKIPPED_DUPLICATE_SYMBOL",
+                "symbol": symbol,
+                "reason": "An open position or pending option entry already exists for this underlying",
+            })
+            return
         open_count = sum(p["status"]=="OPEN" for p in self.positions.values()) + len(self.pending)
         trades_today = len(self.trades(now.date().isoformat()))
         if open_count >= int(self.config["max_positions"]) or trades_today + len(self.pending) >= int(self.config["max_trades_per_day"]):
