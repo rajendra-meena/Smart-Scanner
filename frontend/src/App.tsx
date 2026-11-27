@@ -81,6 +81,25 @@ export default function App(){
  <footer className="footer"><span>SMART SCANNER · MARKET INTELLIGENCE</span><span><ShieldCheck size={12}/> PRIVATE SESSION · PAPER FIRST · LIVE SAFETY GATED</span></footer>
  </div></main></div>;
 }
+function MarketHeatmap({rows}:{rows:MarketRow[]}){
+ const ordered=[...rows].sort((a,b)=>b.change_percent-a.change_percent);
+ const maxMove=Math.max(1,...ordered.map(row=>Math.abs(row.change_percent)));
+ return <section className="market-heatmap">
+  <div className="heatmap-heading"><div><span className="heatmap-kicker">LIVE MARKET VISUALIZATION</span><h3>Gainers &amp; losers heatmap</h3><p>Real-time price change from previous close · Current selected universe</p></div><div className="heatmap-legend"><span><i className="heat-positive"/> Gainers</span><span><i className="heat-negative"/> Losers</span></div></div>
+  {ordered.length?<div className="heatmap-grid">{ordered.map(row=>{
+   const positive=row.change_percent>=0;
+   const intensity=Math.min(1,Math.abs(row.change_percent)/maxMove);
+   const alpha=(0.16+intensity*0.42).toFixed(2);
+   const background=positive?`rgba(22, 163, 112, ${alpha})`:`rgba(210, 65, 91, ${alpha})`;
+   return <div className="heat-tile" key={row.instrument_token} style={{backgroundColor:background}} title={`${row.symbol}: ${pct(row.change_percent)} · LTP ₹${money(row.last_price)}`}>
+    <div className="heat-tile-top"><b>{row.symbol}</b><span>{positive?"▲":"▼"}</span></div>
+    <strong className={positive?"up":"down"}>{pct(row.change_percent)}</strong>
+    <small>₹{money(row.last_price)}</small>
+   </div>;
+  })}</div>:<div className="empty">No live gainers or losers are available for this selection.</div>}
+  <div className="heatmap-footnote"><span>{ordered.length} securities</span><span>Tile intensity reflects percentage move within this heatmap</span></div>
+ </section>;
+}
 function MoverList({title,rows,positive=false}:{title:string;rows:MarketRow[];positive?:boolean}){
  return <div className="mover-card mover-table-card"><div className="mover-title"><h3>{title}</h3><span>{rows.length} instruments</span></div>{rows.length?<div className="mover-table-wrap"><table className="mover-table"><thead><tr><th>SYMBOL</th><th>OPEN</th><th>HIGH</th><th>LOW</th><th>PREV. CLOSE</th><th>LTP</th><th>% CHNG</th></tr></thead><tbody>{rows.map(row=><tr key={row.instrument_token}><td className="symbol-cell">{row.symbol}</td><td>{money(row.open)}</td><td>{money(row.high)}</td><td>{money(row.low)}</td><td>{money(row.close)}</td><td className="ltp-cell">{money(row.last_price)}</td><td className={row.change_percent>=0?"up":"down"}>{pct(row.change_percent)}</td></tr>)}</tbody></table></div>:<div className="empty">No valid live market rows available for this selection.</div>}</div>;
 }
